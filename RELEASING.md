@@ -21,7 +21,9 @@ are being set up together with the first code; until then nothing is published.
 flowchart LR
   O[maintainer merges a PR] --> M[master]
   D[Dependabot PR, auto-merged when green] --> M
-  M --> B[Build workflow]
+  M --> C{image-relevant files<br/>changed since last release?}
+  C -- "no (docs, CI)" --> Q[no release,<br/>listed in the next one]
+  C -- yes --> B[Build workflow<br/>amd64 + arm64]
   B --> T{smoke test:<br/>image starts,<br/>/metrics answers}
   T -- ok --> R[publish release vX.Y.Z]
   R --> G["push :X.Y.Z and :latest<br/>to GHCR"]
