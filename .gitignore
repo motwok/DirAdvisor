@@ -10,4 +10,4 @@ cover.txt
 coverage.html
 
 .env
-state/
+/state/
