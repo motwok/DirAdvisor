@@ -1,0 +1,2 @@
+# Normalize line endings: store LF in the repo. The image and the scripts run on Linux.
+* text=auto eol=lf
