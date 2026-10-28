@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Integration test (spec TST-2). Runs as root on a CI runner.
 # Usage: run.sh IMAGE COVERDIR
-set -euo pipefail
+# No pipefail: grep -q closes the pipe early and the writer would fail with SIGPIPE.
+set -eu
 
 IMAGE=$1
 COVER=$2
