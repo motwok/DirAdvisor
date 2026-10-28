@@ -59,7 +59,7 @@ DirAdvisor deliberately does things that can look alarming but are by design:
   needs these capabilities,
 - on ZFS hosts it runs the host's own **`zfs`** tool (read-only subcommands) inside a chroot of the host
   filesystem,
-- it mounts the **Docker socket** to discover volumes, bind mounts and their containers,
+- it mounts the **Docker socket** (read-only use) to discover volumes and their containers,
 - it mounts the **host filesystem read-write** and sets the **project ID** and the project-inherit flag
   on directories it measures,
 - `/metrics` exposes **paths, volume, container and stack names**. Do not publish its port to untrusted
