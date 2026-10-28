@@ -5,6 +5,9 @@
 # Go test and coverage output
 *.test
 *.out
+/cover*/
+cover.txt
+coverage.html
 
 .env
-state/
+/state/
