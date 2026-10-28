@@ -55,6 +55,41 @@ flowchart LR
 - Docker. The container needs the capabilities `SYS_ADMIN` and `DAC_READ_SEARCH` (on ZFS hosts also
   the device `/dev/zfs`); `privileged` works as a fallback, like cAdvisor.
 
+## Quick start
+
+```yaml
+services:
+  diradvisor:
+    image: ghcr.io/motwok/diradvisor:latest
+    restart: unless-stopped
+    cap_add: [ SYS_ADMIN, DAC_READ_SEARCH ]
+    # devices: [ /dev/zfs ]          # only on ZFS hosts
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /:/host:rslave               # project IDs are set on host directories
+      - diradvisor-data:/data        # config.yml and state.json
+    ports:
+      - "8080:8080"
+volumes:
+  diradvisor-data:
+```
+
+Docker volumes are measured without any config. Other directories go into `/data/config.yml`:
+
+```yaml
+directories:
+  - path: /srv/backup
+    labels: { stack: backup }
+  - path: /home/*                    # every match is its own entry
+    labels: { user: "$1" }
+  - path: ${DATA_ROOT}/archive       # environment variables of the container
+```
+
+Main metrics: `diradvisor_directory_bytes` and `diradvisor_directory_inodes` (labels `path`, `source`,
+`volume`, `stack`), `diradvisor_directory_info` (`owner`, `state`, `project_id`),
+`diradvisor_admin_action_needed` and `diradvisor_directory_unmeasurable` (what is missing and why; the
+log has the exact command). Endpoints: `/metrics`, `/-/healthy`, `/-/ready`, `POST /-/reload`.
+
 ## Port
 
 > **The default port changes with version 1.0.**
