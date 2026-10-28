@@ -1,0 +1,19 @@
+DirAdvisor
+Copyright (c) Emmo Emminghaus mo2000 at mo2000 dot de
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version. See the LICENSE file for the full text.
+
+--------------------------------------------------------------------------------
+Third-party components
+--------------------------------------------------------------------------------
+
+DirAdvisor is written in Go. The binary contains:
+
+- the Go standard library, BSD-3-Clause license, Copyright The Go Authors;
+- go-yaml, the YAML parser, MIT and Apache-2.0 licenses, see its repository.
+
+The container image is built FROM scratch and contains only the DirAdvisor
+binary.

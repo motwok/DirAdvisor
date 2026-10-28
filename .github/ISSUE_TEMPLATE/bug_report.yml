@@ -1,0 +1,109 @@
+name: Bug report
+description: Report something that doesn't work as expected.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill in the fields below;
+        the details make it much easier to reproduce and fix. Remove host names, paths
+        or labels you do not want to make public.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you start
+      options:
+        - label: I searched existing issues and this isn't a duplicate.
+          required: true
+        - label: This is **not** a security vulnerability (those go through [SECURITY.md](https://github.com/motwok/DirAdvisor/security/advisories/new), not a public issue).
+          required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What went wrong, and what did you expect instead?
+      placeholder: A volume is missing from /metrics / the size is wrong / the stack label is wrong / ...
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: symptoms
+    attributes:
+      label: Symptoms
+      description: Which did you observe?
+      options:
+        - label: A directory or volume is missing from /metrics
+        - label: A size or inode count is wrong
+        - label: The owner, stack or state label is wrong
+        - label: diradvisor_quota_enabled is 0 although the quota feature is enabled
+        - label: The container does not start or /metrics does not answer
+        - label: Other (describe above)
+
+  - type: input
+    id: version
+    attributes:
+      label: DirAdvisor version
+      description: Image tag or digest, or the version label of diradvisor_build_info.
+      placeholder: e.g. sha256:... or the version label
+    validations:
+      required: true
+
+  - type: input
+    id: kernel
+    attributes:
+      label: Kernel version
+      description: Output of `uname -r` on the host.
+      placeholder: e.g. 6.1.0-26-amd64
+    validations:
+      required: true
+
+  - type: input
+    id: filesystem
+    attributes:
+      label: Filesystem and features
+      description: Filesystem of the affected directory and the output of `tune2fs -l <device> | grep -i features`.
+      placeholder: e.g. ext4, features include project quota
+    validations:
+      required: true
+
+  - type: dropdown
+    id: privileges
+    attributes:
+      label: How does the container run?
+      options:
+        - privileged
+        - cap_add
+        - other (describe below)
+    validations:
+      required: true
+
+  - type: textarea
+    id: metrics
+    attributes:
+      label: Relevant /metrics lines and container log
+      description: The affected series and the output of `docker logs <container>`.
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Even rough steps help, for example how the volume was created and mounted.
+      placeholder: |
+        1. docker volume create ...
+        2. Start a container that mounts it read-write
+        3. /metrics shows ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Compose file excerpt, screenshots, anything else.
+    validations:
+      required: false

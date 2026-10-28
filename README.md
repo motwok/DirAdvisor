@@ -45,6 +45,26 @@ flowchart LR
   the documentation once it exists).
 - Docker. The container runs privileged, like cAdvisor.
 
+## Releases
+
+Every green build of `master` publishes `ghcr.io/motwok/diradvisor:latest`, and the image is rebuilt
+weekly. See [RELEASING.md](RELEASING.md).
+
+## Contributing
+
+Bug reports and feature requests go to **GitHub Issues**; **pull requests are welcome**.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Security problems are reported privately, see
+[SECURITY.md](SECURITY.md). For help, see [SUPPORT.md](SUPPORT.md).
+
 ## License
 
 [GNU Affero General Public License v3.0](LICENSE)
+
+## Third-party
+
+DirAdvisor is written in Go; its only dependency is the YAML parser go-yaml. See [NOTICE](NOTICE).
+
+## Support Me
+
+If you find this project useful, please consider supporting it
+by buying me a coffee: [Buy Me a Coffee](https://ko-fi.com/motwok)
