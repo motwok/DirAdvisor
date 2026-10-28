@@ -45,6 +45,16 @@ flowchart LR
   the documentation once it exists).
 - Docker. The container runs privileged, like cAdvisor.
 
+## Port
+
+> **The default port changes with version 1.0.**
+>
+> Before 1.0, DirAdvisor serves `/metrics` on port **8080** (the same default as cAdvisor). With 1.0 the
+> default changes to a port registered in the Prometheus
+> [default port allocations](https://github.com/prometheus/prometheus/wiki/Default-port-allocations).
+> If you depend on the port, set it explicitly with `--web.listen-address`, and update your Prometheus
+> scrape configuration when you move to 1.0.
+
 ## Releases
 
 Every green build of `master` publishes `ghcr.io/motwok/diradvisor:latest`, and the image is rebuilt
