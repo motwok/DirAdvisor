@@ -1,15 +1,17 @@
 # Releasing DirAdvisor
 
 DirAdvisor is released as a container image, `ghcr.io/motwok/diradvisor`, with
-[Semantic Versioning](https://semver.org) (0.x before 1.0). **Every merge into `master` is a release.**
-There is no manual release step: merging a pull request is the approval. The workflows described here
+[Semantic Versioning](https://semver.org) (0.x before 1.0). **Every merge into `master` that changes the
+image is a release**, that is changes to Go code, `go.mod`/`go.sum` or the `Dockerfile`. Merges that
+only touch documentation or CI build nothing new; they are listed in the next real release. There is no
+manual release step: merging a pull request is the approval. The workflows described here
 are being set up together with the first code; until then nothing is published.
 
 ## Workflows at a glance
 
 | Workflow | File | Trigger | What it does |
 |---|---|---|---|
-| **Build** | `build.yml` | PR to `master`, push to `master` | Builds the image and runs the smoke test. On a push to `master` it then publishes the release `vX.Y.Z` and pushes `:X.Y.Z` and `:latest` to GHCR. |
+| **Build** | `build.yml` | PR to `master`, push to `master` | Builds the image for `amd64` and `arm64` and runs the smoke test. On a push to `master` that changed the image it then publishes the release `vX.Y.Z` and pushes `:X.Y.Z` and `:latest` to GHCR. |
 | **Release Drafter** | `release-drafter.yml` | PR events, push to `master` | Labels pull requests from their Conventional Commit titles and keeps the release notes of the next version up to date. |
 | **Dependabot** | `.github/dependabot.yml` | Dependabot schedule | Opens PRs for the Go modules (`go.mod`), the `golang` build image in the `Dockerfile` and the GitHub Actions used; they are merged automatically once the build is green. |
 
@@ -49,7 +51,8 @@ Labels are set automatically from Conventional Commit titles (`feat:`, `fix:`, `
 
 ## Dependency updates are released automatically
 
-**An update of Go or of a dependency triggers a release on its own.** Dependabot opens the pull request,
+**An update of Go or of a dependency triggers a release on its own** (updates of GitHub Actions only
+touch CI and do not). Dependabot opens the pull request,
 it is merged automatically once the build and the smoke test pass, and the result is a new patch
 release. If you run `:latest` and redeploy regularly, you get it without doing anything.
 

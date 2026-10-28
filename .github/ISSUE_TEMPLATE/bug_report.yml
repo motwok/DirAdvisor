@@ -37,7 +37,7 @@ body:
         - label: A directory or volume is missing from /metrics
         - label: A size or inode count is wrong
         - label: The owner, stack or state label is wrong
-        - label: diradvisor_quota_enabled is 0 although the quota feature is enabled
+        - label: An admin action is reported although the quota feature is enabled
         - label: The container does not start or /metrics does not answer
         - label: Other (describe above)
 

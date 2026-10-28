@@ -67,7 +67,7 @@ flowchart LR
 
 ## Releases
 
-Every merge into `master` is a release (Semantic Versioning), published as
+Every merge into `master` that changes the image is a release (Semantic Versioning), published as
 `ghcr.io/motwok/diradvisor:X.Y.Z` and `:latest`. **Updates of Go and of dependencies are released
 automatically too**; read the risks and how to opt out in [RELEASING.md](RELEASING.md). Release notes
 are on the [Releases page](https://github.com/motwok/DirAdvisor/releases), see also

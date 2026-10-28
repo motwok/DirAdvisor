@@ -3,10 +3,10 @@
 The full, per-version changelog lives on the
 **[Releases page](https://github.com/motwok/DirAdvisor/releases)**.
 
-Every merge into `master` is a release. Its notes are compiled **automatically** from the merged pull
-requests by Release Drafter, grouped into **Features**, **Bug Fixes**, **Documentation** and
-**Maintenance** by PR label. Dependency updates (Go, go-yaml, GitHub Actions) are releases too. See
-[RELEASING.md](RELEASING.md).
+Every merge into `master` that changes the image is a release. Its notes are compiled **automatically**
+from the merged pull requests by Release Drafter, grouped into **Features**, **Bug Fixes**,
+**Documentation** and **Maintenance** by PR label; documentation and CI changes are listed with the next
+release. Updates of Go and go-yaml are releases too. See [RELEASING.md](RELEASING.md).
 
 Versioning follows [Semantic Versioning](https://semver.org). The next version is derived from PR labels:
 `breaking`/`major` -> **major**, `feature`/`enhancement` -> **minor**, otherwise **patch**. Add the

@@ -45,7 +45,7 @@ update to the newest one.
 ## Automatic dependency releases
 
 Updates of Go and of DirAdvisor's dependencies are merged automatically by Dependabot once the build and
-the smoke test pass, and **every such merge is a release**. Security fixes therefore reach `:latest`
+the smoke test pass, and **every such merge that changes the image is a release**. Security fixes therefore reach `:latest`
 quickly, but a vulnerable or compromised Go release or dependency would be shipped automatically as
 well. If you want to review updates first, pin a version tag instead of `:latest`. Details and
 mitigations: [RELEASING.md](RELEASING.md#dependency-updates-are-released-automatically).
