@@ -15,7 +15,7 @@ bind mount and any configured directory uses, and which container and Compose st
 - Tools based on `du` have to touch every file on every run. On spinning disks with many small files that
   is slow and costly, so they can only run rarely.
 
-DirAdvisor uses **ext4 project quotas** instead. The kernel keeps a running usage counter per directory
+DirAdvisor uses **project quotas** (ext4, XFS or ZFS) instead. The kernel keeps a running usage counter per directory
 tree, so reading it costs one system call, no matter how many files the tree contains. Usage can be
 scraped every minute, which makes growth alerts ("this volume grew by 2 GB in 30 minutes") practical.
 No limits are set; quotas are used for accounting only.
@@ -26,8 +26,8 @@ No limits are set; quotas are used for accounting only.
 flowchart LR
   D[Docker API] -->|volumes, bind mounts, owners| R[Reconcile]
   C[Configuration] -->|extra directories + labels| R
-  R -->|assign project IDs| F[ext4 project quotas]
-  F -->|quotactl| M["/metrics"]
+  R -->|assign project IDs| F[project quotas<br/>ext4 / XFS / ZFS]
+  F -->|quotactl_fd or zfs projectspace| M["/metrics"]
   M --> P[Prometheus]
 ```
 
@@ -41,10 +41,18 @@ flowchart LR
 
 ## Requirements
 
-- Linux with ext4. The filesystem must have the `project` and `quota` features enabled (one-time, see
-  the documentation once it exists).
-- Docker. The container needs the capabilities `SYS_ADMIN` and `DAC_READ_SEARCH` (`privileged` works
-  as a fallback, like cAdvisor).
+- Linux **5.14 or newer** on `amd64` or `arm64` (the image is multi-arch).
+- The measured directories on a filesystem with project quotas enabled. This is a one-time step for the
+  admin; DirAdvisor never does it itself, it only sets project IDs:
+  - **ext4:** `tune2fs -O project,quota <device>` on the unmounted filesystem;
+  - **XFS:** mount with the `prjquota` option;
+  - **ZFS** (OpenZFS 0.8+): `zpool set feature@project_quota=enabled <pool>`, and the ZFS tools
+    installed on the host.
+
+  When a step is missing, DirAdvisor reports it as `diradvisor_admin_action_needed` and logs the exact
+  command.
+- Docker. The container needs the capabilities `SYS_ADMIN` and `DAC_READ_SEARCH` (on ZFS hosts also
+  the device `/dev/zfs`); `privileged` works as a fallback, like cAdvisor.
 
 ## Port
 
