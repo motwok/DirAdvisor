@@ -31,6 +31,7 @@ func b2f(b bool) float64 {
 func (c *Core) Collect(ctx context.Context, bi BuildInfo) []metrics.Family {
 	c.mu.Lock()
 	v := c.view
+	v.entries = append([]entryView(nil), c.view.entries...)
 	recErrors, recSeconds, reloadOK := c.recErrors, c.recSeconds, c.reloadOK
 	img := c.img
 	c.mu.Unlock()

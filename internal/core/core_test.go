@@ -367,15 +367,18 @@ func TestRunWalkerAndImageLoop(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { e.c.RunWalker(ctx); close(done) }()
-	deadline := time.Now().Add(5 * time.Second)
-	for e.entry(volPathOf("v")).Assigning && time.Now().Before(deadline) {
+	assigning := func() bool {
 		e.c.mu.Lock()
-		e.c.mu.Unlock()
+		defer e.c.mu.Unlock()
+		return e.entry(volPathOf("v")).Assigning
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for assigning() && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	cancel()
 	<-done
-	if e.c.st.Entries[state.VolumeKey("v")].WalkDone != true {
+	if !e.c.st.Entries[state.VolumeKey("v")].WalkDone {
 		t.Fatal("walker did not run")
 	}
 	ctx2, cancel2 := context.WithCancel(context.Background())
