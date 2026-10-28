@@ -1,6 +1,6 @@
 # Security Policy
 
-DirAdvisor runs as a privileged container, reads the Docker API and sets project IDs on directories of
+DirAdvisor runs as a container with elevated capabilities, reads the Docker API and sets project IDs on directories of
 the host. That makes it security-sensitive by nature, and reports are taken seriously.
 
 ## Reporting a vulnerability
@@ -54,8 +54,11 @@ mitigations: [RELEASING.md](RELEASING.md#dependency-updates-are-released-automat
 
 DirAdvisor deliberately does things that can look alarming but are by design:
 
-- it runs **privileged** (or with `SYS_ADMIN` / `SYS_RESOURCE`), because reading and setting project
-  quotas needs these capabilities,
+- it runs with **`SYS_ADMIN` and `DAC_READ_SEARCH`** added (on ZFS hosts also access to `/dev/zfs`),
+  or `privileged` as a fallback, because reading project quotas and setting project IDs on all files
+  needs these capabilities,
+- on ZFS hosts it runs the host's own **`zfs`** tool (read-only subcommands) inside a chroot of the host
+  filesystem,
 - it mounts the **Docker socket** to discover volumes, bind mounts and their containers,
 - it mounts the **host filesystem read-write** and sets the **project ID** and the project-inherit flag
   on directories it measures,

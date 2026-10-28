@@ -16,8 +16,8 @@ Ideas, reproductions and well-described problems are genuinely valuable too.
 
 ## Pull requests
 
-DirAdvisor runs privileged, reads the Docker socket and changes attributes of directories on the host, so
-every change is reviewed carefully before it is merged. To make that easy:
+DirAdvisor runs with elevated capabilities, reads the Docker socket and changes attributes of
+directories on the host, so every change is reviewed carefully before it is merged. To make that easy:
 
 - For anything larger than a small fix, open an issue first so the approach can be agreed on.
 - Keep a pull request focused on one change. Work on a branch of your fork and target `master`.

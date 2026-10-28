@@ -73,8 +73,8 @@ body:
     attributes:
       label: How does the container run?
       options:
+        - cap_add (recommended settings)
         - privileged
-        - cap_add
         - other (describe below)
     validations:
       required: true

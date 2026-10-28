@@ -43,7 +43,8 @@ flowchart LR
 
 - Linux with ext4. The filesystem must have the `project` and `quota` features enabled (one-time, see
   the documentation once it exists).
-- Docker. The container runs privileged, like cAdvisor.
+- Docker. The container needs the capabilities `SYS_ADMIN` and `DAC_READ_SEARCH` (`privileged` works
+  as a fallback, like cAdvisor).
 
 ## Port
 
