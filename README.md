@@ -57,8 +57,11 @@ flowchart LR
 
 ## Releases
 
-Every green build of `master` publishes `ghcr.io/motwok/diradvisor:latest`, and the image is rebuilt
-weekly. See [RELEASING.md](RELEASING.md).
+Every merge into `master` is a release (Semantic Versioning), published as
+`ghcr.io/motwok/diradvisor:X.Y.Z` and `:latest`. **Updates of Go and of dependencies are released
+automatically too**; read the risks and how to opt out in [RELEASING.md](RELEASING.md). Release notes
+are on the [Releases page](https://github.com/motwok/DirAdvisor/releases), see also
+[CHANGELOG.md](CHANGELOG.md).
 
 ## Contributing
 

@@ -34,14 +34,21 @@ Please give a reasonable amount of time for a fix before any public disclosure.
 
 ## Supported versions
 
-Only the **current image** (`:latest`) receives security fixes. Older images are not patched; please pull
-the newest one. The image is rebuilt at least weekly so that Go and dependency fixes arrive without a
-code change.
+Only the **latest release** (`:latest`) receives security fixes. Older releases are not patched; please
+update to the newest one.
 
 | Version | Supported |
 |---|---|
-| `:latest` | yes |
-| Older images | no |
+| Latest release (`:latest`) | yes |
+| Older releases | no |
+
+## Automatic dependency releases
+
+Updates of Go and of DirAdvisor's dependencies are merged automatically by Dependabot once the build and
+the smoke test pass, and **every such merge is a release**. Security fixes therefore reach `:latest`
+quickly, but a vulnerable or compromised Go release or dependency would be shipped automatically as
+well. If you want to review updates first, pin a version tag instead of `:latest`. Details and
+mitigations: [RELEASING.md](RELEASING.md#dependency-updates-are-released-automatically).
 
 ## Scope
 
