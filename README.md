@@ -74,6 +74,9 @@ volumes:
   diradvisor-data:
 ```
 
+The image already sets `--config.file=/data/config.yml`, `--storage.path=/data` and `--path.rootfs=/host`.
+A `command:` replaces them, so repeat them when adding flags; see [Install.md](docs/Install.md#2-run-the-container).
+
 Docker volumes are measured without any config. Other directories go into `/data/config.yml`:
 
 ```yaml
