@@ -9,6 +9,7 @@ import (
 
 	"github.com/motwok/DirAdvisor/internal/config"
 	"github.com/motwok/DirAdvisor/internal/docker"
+	"github.com/motwok/DirAdvisor/internal/host"
 	"github.com/motwok/DirAdvisor/internal/state"
 )
 
@@ -196,8 +197,37 @@ func TestCommands(t *testing.T) {
 		"filesystem_not_supported":    "ext4, XFS or ZFS",
 		"other":                       "",
 	} {
-		if got := command(reason, m, "/srv/x"); !strings.Contains(got, want) {
+		if got := command(reason, m, "/srv/x", false); !strings.Contains(got, want) {
 			t.Errorf("%s: %q", reason, got)
+		}
+	}
+}
+
+func TestCommandSteps(t *testing.T) {
+	ext := hostMount("/var/lib/docker", "ext4", "/dev/mapper/vg-docker")
+	for _, c := range []struct {
+		reason string
+		m      host.Mount
+		docker bool
+		want   []string
+	}{
+		{"enable_project_quota_feature", ext, true, []string{"systemctl stop docker docker.socket containerd",
+			"umount /var/lib/docker", "tune2fs -O project,quota /dev/mapper/vg-docker", "mount /var/lib/docker",
+			"systemctl start containerd docker", "no fstab change"}},
+		{"enable_project_quota_feature", hostMount("/srv", "ext4", "/dev/sdb1"), false, []string{"stop everything using /srv", "start it again"}},
+		{"enable_project_quota_feature", hostMount("/", "ext4", "/dev/sda1"), true, []string{"rescue system", "tune2fs -O project,quota /dev/sda1"}},
+		{"mount_with_prjquota", hostMount("/srv", "xfs", "/dev/sdc1"), true, []string{"/etc/fstab", "/dev/sdc1",
+			"systemctl stop docker", "umount /srv && mount /srv", "remount is not enough", "start Docker again"}},
+		{"mount_with_prjquota", hostMount("/", "xfs", "/dev/sda1"), false, []string{"rootflags=prjquota", "reboot"}},
+	} {
+		got := command(c.reason, c.m, "/x", c.docker)
+		for _, w := range c.want {
+			if !strings.Contains(got, w) {
+				t.Errorf("%s %s: %q lacks %q", c.reason, c.m.Point, got, w)
+			}
+		}
+		if !c.docker && strings.Contains(got, "Docker") {
+			t.Errorf("%s %s: Docker not expected: %q", c.reason, c.m.Point, got)
 		}
 	}
 }

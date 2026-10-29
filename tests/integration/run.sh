@@ -125,7 +125,9 @@ step "admin action and overlap"
 metrics | grep -q 'diradvisor_admin_action_needed{action="enable_project_quota_feature",fstype="ext4",mountpoint="/mnt/it-noq"} 1' || fail "admin action"
 metrics | grep -q 'diradvisor_directory_unmeasurable{path="/mnt/it-noq/vol",reason="enable_project_quota_feature"} 1' || fail "unmeasurable"
 metrics | grep -q 'diradvisor_directory_overlap{inner="/mnt/it-ext4/conf",path="/mnt/it-ext4"} 1' || fail "overlap"
-docker logs diradvisor 2>&1 | grep -q 'tune2fs -O project,quota' || fail "admin action log"
+LOG=$(docker logs diradvisor 2>&1)
+grep -q 'tune2fs -O project,quota' <<<"$LOG" || fail "admin action log"
+grep -q 'systemctl stop docker' <<<"$LOG" || fail "admin action log: stop Docker"
 
 step "walk boundaries"
 OUTER=$(project_id /mnt/it-ext4)

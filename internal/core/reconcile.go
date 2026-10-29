@@ -115,6 +115,12 @@ func (c *Core) Reconcile(ctx context.Context) error {
 	statusCache := map[string]statusResult{}
 	idRange := cfg.Global.ProjectIDs
 	now := c.now()
+	dockerMount := ""
+	if root != "" {
+		if dm, err := c.fs.MountOf(root); err == nil {
+			dockerMount = dm.Point
+		}
+	}
 
 	for _, cd := range cands {
 		if cd.reason != "" {
@@ -143,7 +149,8 @@ func (c *Core) Reconcile(ctx context.Context) error {
 		if sr.reason != "" {
 			v.unmeas = append(v.unmeas, unmeasurable{cd.path, sr.reason})
 			if host.AdminAction(sr.reason) {
-				v.addAction(adminAction{m.Point, m.FSType, sr.reason, command(sr.reason, m, cd.path)})
+				docker := cd.source == state.SourceVolume || m.Point == dockerMount
+				v.addAction(adminAction{m.Point, m.FSType, sr.reason, command(sr.reason, m, cd.path, docker)})
 			}
 			continue
 		}
@@ -519,12 +526,27 @@ func (c *Core) setResetTargets(es []entryView) {
 	}
 }
 
-func command(reason string, m host.Mount, p string) string {
+// command is the step the admin has to do, filled in for the host. docker is
+// set when Docker keeps data on the mount and has to be stopped first.
+func command(reason string, m host.Mount, p string, docker bool) string {
+	stop, start := fmt.Sprintf("stop everything using %s", m.Point), "start it again"
+	if docker {
+		stop = fmt.Sprintf("stop Docker (systemctl stop docker docker.socket containerd) and everything else using %s", m.Point)
+		start = "start Docker again (systemctl start containerd docker)"
+	}
 	switch reason {
 	case host.EnableProjectQuotaFeature:
-		return fmt.Sprintf("unmount %s, run: tune2fs -O project,quota %s, mount it again", m.Point, m.Source)
+		if m.Point == "/" {
+			return fmt.Sprintf("boot a rescue system, run: tune2fs -O project,quota %s on the unmounted root filesystem, reboot", m.Source)
+		}
+		return fmt.Sprintf("%s, umount %s, run: tune2fs -O project,quota %s, mount %s, %s (no fstab change needed)",
+			stop, m.Point, m.Source, m.Point, start)
 	case host.MountWithPrjquota:
-		return fmt.Sprintf("add prjquota to the mount options of %s (root filesystem: rootflags=prjquota) and mount it again; on XFS v4 with group quota drop group quota first", m.Point)
+		if m.Point == "/" {
+			return "add rootflags=prjquota to the kernel command line (e.g. GRUB_CMDLINE_LINUX, then update-grub) and reboot; on XFS v4 with group quota drop group quota first"
+		}
+		return fmt.Sprintf("add prjquota to the options of %s (%s) in /etc/fstab, %s, umount %s && mount %s (a remount is not enough), %s; on XFS v4 with group quota drop group quota first",
+			m.Point, m.Source, stop, m.Point, m.Point, start)
 	case host.XFSv4GroupQuotaConflict:
 		return fmt.Sprintf("drop group quota on %s or migrate it to XFS v5", m.Point)
 	case host.EnableZFSProjectQuota:
