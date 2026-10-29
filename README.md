@@ -90,6 +90,15 @@ Main metrics: `diradvisor_directory_bytes` and `diradvisor_directory_inodes` (la
 `diradvisor_admin_action_needed` and `diradvisor_directory_unmeasurable` (what is missing and why; the
 log has the exact command). Endpoints: `/metrics`, `/-/healthy`, `/-/ready`, `POST /-/reload`.
 
+## Documentation
+
+- [Install.md](docs/Install.md): enabling project quotas per filesystem, running the container,
+  Prometheus, update, uninstall.
+- [Configuration.md](docs/Configuration.md): flags and every config key.
+- [Metrics.md](docs/Metrics.md): all metrics, reasons and admin actions, example queries and alerts.
+- [Troubleshooting.md](docs/Troubleshooting.md): what to do when something looks wrong.
+- [Build.md](docs/Build.md): building, unit and integration tests, coverage.
+
 ## Port
 
 > **The default port changes with version 1.0.**
