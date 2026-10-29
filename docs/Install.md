@@ -85,10 +85,24 @@ services:
       - diradvisor-data:/data        # config.yml and state.json
     ports:
       - "8080:8080"                  # use another host port if cAdvisor already has 8080
+    # environment:                   # variables used as ${VAR} in config.yml
+    #   DATA_ROOT: /srv
+    # command:                       # replaces the image's defaults: keep the first three flags
+    #   - --config.file=/data/config.yml
+    #   - --storage.path=/data
+    #   - --path.rootfs=/host
+    #   - --log.level=debug
 volumes:
   diradvisor-data:
 ```
 
+- No flags are needed: the image already starts with `--config.file=/data/config.yml`,
+  `--storage.path=/data` and `--path.rootfs=/host`. A `command:` replaces these defaults completely, so
+  repeat them when you add a flag (see the commented lines); otherwise DirAdvisor looks for its config in
+  `/etc/diradvisor/` and for the host at `/`.
+- `environment:` sets the variables that `config.yml` refers to as `${VAR}`.
+- There is no `healthcheck:`: the image has no shell or `curl`. Prometheus sees the health through `up`
+  and `/-/ready`.
 - `SYS_ADMIN` is needed to read project quotas, `DAC_READ_SEARCH` to walk directories with any
   permissions. If your setup blocks them (seccomp, AppArmor), `privileged: true` works as a fallback.
 - The host filesystem must be mounted read-write at `/host`: DirAdvisor sets project IDs there.
