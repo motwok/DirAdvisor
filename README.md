@@ -6,7 +6,7 @@ DirAdvisor runs as a container next to [cAdvisor](https://github.com/google/cadv
 [node_exporter](https://github.com/prometheus/node_exporter). It reports how much space every Docker volume
 and any configured directory uses, and which container and Compose stack owns it.
 
-> **Status:** early development. Nothing is released yet.
+> **Status:** early releases (0.x). Behavior and metrics may still change before 1.0.
 
 ## Why
 
