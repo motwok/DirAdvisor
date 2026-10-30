@@ -12,7 +12,7 @@ manual release step: merging a pull request is the approval.
 |---|---|---|---|
 | **Build** | `build.yml` | PR to `master`, push to `master` | Builds the image for `amd64` and `arm64` and runs the smoke test. On a push to `master` that changed the image it then publishes the release `vX.Y.Z` and pushes `:X.Y.Z` and `:latest` to GHCR. |
 | **Release Drafter** | `release-drafter.yml` | PR events, push to `master` | Labels pull requests from their Conventional Commit titles and keeps the release notes of the next version up to date. |
-| **Dependabot** | `.github/dependabot.yml` | Dependabot schedule | Opens PRs for the Go modules (`go.mod`), the `golang` build image in the `Dockerfile` and the GitHub Actions used; they are merged automatically once the build is green. |
+| **Dependabot** | `.github/dependabot.yml` | daily (Dependabot schedule) | Opens PRs for the Go modules (`go.mod`), the `golang` build image in the `Dockerfile` and the GitHub Actions used; they are merged automatically once the build is green. |
 
 ## Release flow
 
