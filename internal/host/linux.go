@@ -90,8 +90,16 @@ func (l *Linux) ListDirs(p string) ([]string, error) {
 	return out, nil
 }
 
+// Replaced in tests.
+var (
+	mountinfoPath = "/proc/self/mountinfo"
+	ioctl         = sysIoctl
+	quotactlNext  = sysQuotactlNext
+	runTool       = (*Linux).run
+)
+
 func (l *Linux) MountOf(p string) (Mount, error) {
-	f, err := os.Open("/proc/self/mountinfo")
+	f, err := os.Open(mountinfoPath)
 	if err != nil {
 		return Mount{}, err
 	}
@@ -103,7 +111,7 @@ func (l *Linux) MountOf(p string) (Mount, error) {
 	return Mount{Point: toHost(l.Root, m.Point), FSType: m.FSType, Source: m.Source, Options: m.Options}, nil
 }
 
-func ioctl(fd int, req uintptr, arg unsafe.Pointer) error {
+func sysIoctl(fd int, req uintptr, arg unsafe.Pointer) error {
 	if _, _, e := syscall.Syscall(syscall.SYS_IOCTL, uintptr(fd), req, uintptr(arg)); e != 0 {
 		return e
 	}
@@ -131,7 +139,7 @@ func (l *Linux) ProjectID(p string) (uint32, error) {
 	return x.Projid, nil
 }
 
-func quotactlNext(fd int, id uint32, d *nextdqblk) error {
+func sysQuotactlNext(fd int, id uint32, d *nextdqblk) error {
 	cmd := uintptr(qGetNextQuota<<8 | prjQuota)
 	if _, _, e := syscall.Syscall6(sysQuotactlFd, uintptr(fd), cmd, uintptr(id), uintptr(unsafe.Pointer(d)), 0, 0); e != 0 {
 		return e
@@ -167,7 +175,7 @@ func (l *Linux) QuotaStatus(m Mount) (string, error) {
 			return InstallZFSUserland, nil
 		}
 		pool, _, _ := strings.Cut(m.Source, "/")
-		out, err := l.run(context.Background(), bin, "get", "-Hp", "-o", "value", "feature@project_quota", pool)
+		out, err := runTool(l, context.Background(), bin, "get", "-Hp", "-o", "value", "feature@project_quota", pool)
 		if err != nil {
 			return "", err
 		}
@@ -189,7 +197,7 @@ func (l *Linux) Usage(ctx context.Context, m Mount, minID uint32) (map[uint32]Us
 		}
 		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
-		out, err := l.run(ctx, bin, "projectspace", "-Hp", "-o", "name,used,objused", m.Source)
+		out, err := runTool(l, ctx, bin, "projectspace", "-Hp", "-o", "name,used,objused", m.Source)
 		if err != nil {
 			return nil, err
 		}
@@ -252,7 +260,7 @@ func (l *Linux) ZFSVersions() (string, string) {
 	}
 	var user string
 	if bin := l.zfsBinary("zfs"); bin != "" {
-		user, _ = l.run(context.Background(), bin, "version")
+		user, _ = runTool(l, context.Background(), bin, "version")
 	}
 	return strings.TrimSpace(string(mod)), strings.TrimSpace(strings.Split(user, "\n")[0])
 }

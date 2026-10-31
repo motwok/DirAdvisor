@@ -92,8 +92,11 @@ func TestInvalid(t *testing.T) {
 		"root":             "directories: [ { path: / } ]",
 		"excluded":         "directories: [ { path: /var/lib/docker/volumes } ]",
 		"excluded glob":    "directories: [ { path: /proc/* } ]",
-		"unset var":        "directories: [ { path: ${NOPE} } ]",
-		"unterminated var": "directories: [ { path: ${NOPE } ]",
+		"unset var":        "directories: [ { path: \"${NOPE}\" } ]",
+		"unset vars":       "directories: [ { path: \"${NOPE}\" }, { path: \"${NOPE2}\" } ]",
+		"unterminated var": "directories: [ { path: \"${NOPE\" } ]",
+		"ref not a string": "docker: { container_labels: [ { from: [a] } ] }",
+		"ref sequence":     "docker: { container_labels: [ [a] ] }",
 		"empty from":       "docker: { volume_labels: [ \"\" ] }",
 	}
 	for name, data := range cases {

@@ -73,6 +73,15 @@ func TestExpandGlob(t *testing.T) {
 	if _, _, err := ExpandGlob("/home/*", fail, isDir); err == nil {
 		t.Fatal("expected list error")
 	}
+	deep := func(d string) ([]string, error) {
+		if d == "/srv/a-1" {
+			return nil, errors.New("boom")
+		}
+		return tree[d], nil
+	}
+	if _, _, err := ExpandGlob("/srv/*/*", deep, isDir); err == nil {
+		t.Fatal("expected nested list error")
+	}
 }
 
 func TestSubstCaptures(t *testing.T) {

@@ -4,9 +4,12 @@ package docker
 
 import (
 	"context"
+	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -118,5 +121,68 @@ func TestRelevant(t *testing.T) {
 	}
 	if (Container{ID: "x"}).Name() != "x" {
 		t.Fatal("name fallback")
+	}
+}
+
+type errRT struct{}
+
+func (errRT) RoundTrip(*http.Request) (*http.Response, error) { return nil, errors.New("dial failed") }
+
+func TestErrors(t *testing.T) {
+	var nilCtx context.Context
+	c := fake("1.47")
+	if _, err := c.Info(nilCtx); err == nil {
+		t.Error("get: bad request")
+	}
+	if _, _, err := c.CheckVersion(nilCtx); err == nil {
+		t.Error("version: bad request")
+	}
+	if err := c.Events(nilCtx, nil); err == nil {
+		t.Error("events: bad request")
+	}
+
+	ctx := context.Background()
+	d := NewWithHTTP(errRT{})
+	if _, err := d.Info(ctx); err == nil {
+		t.Error("get: dial")
+	}
+	if _, reached, err := d.CheckVersion(ctx); err == nil || reached {
+		t.Error("version: dial")
+	}
+	if err := d.Events(ctx, nil); err == nil {
+		t.Error("events: dial")
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(500)
+		io.WriteString(w, "plain failure\n")
+	})
+	e := NewWithHTTP(rt{mux})
+	if _, err := e.Info(ctx); err == nil || err.(*APIError).Message != "plain failure" {
+		t.Errorf("plain error: %v", err)
+	}
+	if _, reached, err := e.CheckVersion(ctx); err == nil || !reached {
+		t.Errorf("version: bad body: %v", err)
+	}
+	if err := e.Events(ctx, nil); err == nil || err.(*APIError).Status != 500 {
+		t.Errorf("events: status: %v", err)
+	}
+}
+
+func TestUnixSocket(t *testing.T) {
+	sock := filepath.Join(t.TempDir(), "docker.sock")
+	l, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Skipf("no unix sockets: %v", err)
+	}
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		io.WriteString(w, `{"ApiVersion":"1.47"}`)
+	}))
+	srv.Listener = l
+	srv.Start()
+	defer srv.Close()
+	if v, _, err := New(sock).CheckVersion(context.Background()); err != nil || v != "1.47" {
+		t.Fatalf("%q %v", v, err)
 	}
 }

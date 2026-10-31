@@ -80,6 +80,9 @@ func TestMisc(t *testing.T) {
 	if !AdminAction(UpgradeKernel) || AdminAction(RemoteFilesystem) || AdminAction("path_missing") {
 		t.Fatal("AdminAction")
 	}
+	if hasOption("rw,relatime", "prjquota", "pquota") {
+		t.Fatal("hasOption")
+	}
 	if unescape(`a\134b`) != `a\b` || unescape(`a\9`) != `a\9` {
 		t.Fatal("unescape")
 	}

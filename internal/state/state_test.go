@@ -5,6 +5,7 @@ package state
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -84,5 +85,51 @@ func TestSaveCreatesDir(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, FileName)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestNullEntries(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, FileName), []byte(`{"schema_version": 1, "entries": null}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if s, err := Load(dir); err != nil || s.Entries == nil {
+		t.Fatalf("null entries: %v %v", s, err)
+	}
+}
+
+func TestCorruptNotMovable(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, FileName)
+	if err := os.WriteFile(f, []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A non-empty directory in the way makes the rename fail, even for root.
+	if err := os.MkdirAll(filepath.Join(f+".bak", "x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(dir); err == nil || !strings.Contains(err.Error(), "moving it failed") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestSaveErrors(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := New().Save(filepath.Join(file, "dir")); err == nil {
+		t.Fatal("parent is a file")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	ro := t.TempDir()
+	if err := os.Chmod(ro, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(ro, 0o755) })
+	if err := New().Save(ro); err == nil {
+		t.Fatal("read-only directory")
 	}
 }
