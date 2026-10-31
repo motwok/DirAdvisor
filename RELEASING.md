@@ -10,9 +10,10 @@ manual release step: merging a pull request is the approval.
 
 | Workflow | File | Trigger | What it does |
 |---|---|---|---|
-| **Build** | `build.yml` | PR to `master`, push to `master`, daily | Runs unit and integration tests and the coverage gate. On `master`, if the image changed since the last release, it builds the image, starts it (smoke test), pushes `:X.Y.Z` and `:latest` to GHCR and then publishes the release `vX.Y.Z`. The daily run releases merges that started no build of their own (see below). |
+| **Build** | `build.yml` | PR to `master`, push to `master`, started by the auto-merge | Runs unit and integration tests and the coverage gate. On `master`, if the image changed since the last release, it builds the image, starts it (smoke test), pushes `:X.Y.Z` and `:latest` to GHCR and then publishes the release `vX.Y.Z`. |
 | **Release Drafter** | `release-drafter.yml` | PR events, push to `master` | Labels pull requests from their Conventional Commit titles and keeps the release notes of the next version up to date. |
-| **Dependabot** | `.github/dependabot.yml` | daily (Dependabot schedule) | Opens PRs for the Go modules (`go.mod`), the `golang` build image in the `Dockerfile` and the GitHub Actions used; they are merged automatically once the build is green. |
+| **Dependabot** | `.github/dependabot.yml` | daily (Dependabot schedule) | Opens PRs for the Go modules (`go.mod`), the `golang` build image in the `Dockerfile` and the GitHub Actions used. |
+| **Dependabot auto-merge** | `dependabot-automerge.yml` | daily | Merges the Dependabot PRs whose checks are green and then starts the Build workflow, because a merge made by the workflow token starts no build of its own. |
 
 All actions are pinned to a commit SHA (with the version as a comment); Dependabot moves the pins.
 
@@ -57,10 +58,9 @@ Labels are set automatically from Conventional Commit titles (`feat:`, `fix:`, `
 ## Dependency updates are released automatically
 
 **An update of Go or of a dependency becomes a release on its own** (updates of GitHub Actions only
-touch CI and do not). Dependabot opens the pull request, it is merged automatically once the build
-passes, and the daily Build run releases it as a new patch release (a merge made by the auto-merge
-starts no build of its own, a GitHub limitation). If you run `:latest` and redeploy regularly, you get
-it without doing anything.
+touch CI and do not). Dependabot opens the pull request; once its checks are green, the daily auto-merge
+merges it and starts the build, which releases it as a new patch release. If you run `:latest` and
+redeploy regularly, you get it without doing anything.
 
 That is how security fixes in Go and its standard library reach you within a few days. It also means:
 

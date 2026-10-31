@@ -5,10 +5,7 @@ on:
     branches: [master]
   push:
     branches: [master]
-  schedule:
-    # A merge made by Dependabot's auto-merge starts no workflow of its own;
-    # this run releases what it left behind.
-    - cron: '30 4 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
