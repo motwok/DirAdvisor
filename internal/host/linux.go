@@ -98,11 +98,13 @@ var (
 	quotactlNext  = sysQuotactlNext
 	runTool       = (*Linux).run
 	kernelRelease = sysKernelRelease
+	uname         = syscall.Uname
+	fstat         = syscall.Fstat
 )
 
 func sysKernelRelease() string {
 	var u syscall.Utsname
-	if syscall.Uname(&u) != nil {
+	if uname(&u) != nil {
 		return ""
 	}
 	b := make([]byte, 0, len(u.Release))
@@ -323,7 +325,7 @@ func (l *Linux) Walk(ctx context.Context, root string, id uint32, inherit bool, 
 	d := os.NewFile(uintptr(fd), croot)
 	defer d.Close()
 	var st syscall.Stat_t
-	if err := syscall.Fstat(fd, &st); err != nil {
+	if err := fstat(fd, &st); err != nil {
 		return err
 	}
 	w := walker{ctx: ctx, id: id, inherit: inherit, skip: skip, dev: st.Dev}

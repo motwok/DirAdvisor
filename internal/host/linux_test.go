@@ -163,6 +163,15 @@ func TestKernelBefore(t *testing.T) {
 	if kernelBefore(5, 14) {
 		t.Fatal("this kernel runs quotactl_fd")
 	}
+	if sysKernelRelease() == "" {
+		t.Fatal("uname")
+	}
+	old := uname
+	uname = func(*syscall.Utsname) error { return errors.New("no uname") }
+	if sysKernelRelease() != "" {
+		t.Fatal("uname error must give an empty release")
+	}
+	uname = old
 	for release, old := range map[string]bool{"5.13.19-x": true, "5.14.0": false, "4.19": true, "6.12.1-amd64": false, "weird": false, "": false} {
 		useKernel(t, release)
 		if kernelBefore(5, 14) != old {
@@ -411,6 +420,13 @@ func TestLinuxWalkErrors(t *testing.T) {
 	if err := l.Walk(cctx, root, 1, true, nil, 1); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancel: %v", err)
 	}
+
+	oldFstat := fstat
+	fstat = func(int, *syscall.Stat_t) error { return syscall.EIO }
+	if err := l.Walk(ctx, root, 1, true, nil, 0); !errors.Is(err, syscall.EIO) {
+		t.Fatalf("fstat error: %v", err)
+	}
+	fstat = oldFstat
 
 	f, err := os.Open(filepath.Join(root, "d/f"))
 	if err != nil {
