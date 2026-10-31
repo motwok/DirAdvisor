@@ -27,7 +27,7 @@ writes the file.
 global:
   reconcile_interval: 60s          # discovery, ownership, ID assignment; also on Docker events
   admin_action_log_interval: 1h    # repeat pending admin actions in the log
-  walk_files_per_second: 0         # limit for the project ID walks, 0 = no limit (always idle I/O)
+  walk_files_per_second: 0         # limit for the project ID walks, 0 = no limit, max 1000000000 (always idle I/O)
   image_update_check:
     enabled: false                 # is the running image still the current :latest?
     interval: 24h

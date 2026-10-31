@@ -306,12 +306,13 @@ func TestLinuxWalk(t *testing.T) {
 	touch(t, filepath.Join(root, "d/f"))
 	touch(t, filepath.Join(root, "d/e/g"))
 	touch(t, filepath.Join(root, "skip/h"))
-	touch(t, filepath.Join(root, "gone"))
 	if err := os.Symlink("d", filepath.Join(root, "link")); err != nil {
 		t.Fatal(err)
 	}
+	if err := syscall.Mkfifo(filepath.Join(root, "fifo"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	fx.attrs[filepath.Join(root, "d")] = fsxattr{Projid: 5, Xflags: fsXflagProjInherit | 1}
-	fx.fail[filepath.Join(root, "gone")] = syscall.ENOENT
 
 	l := New("/").(*Linux)
 	skip := map[string]bool{filepath.Join(root, "skip"): true}
@@ -326,8 +327,10 @@ func TestLinuxWalk(t *testing.T) {
 	if x := fx.attrs[filepath.Join(root, "d")]; x.Xflags != fsXflagProjInherit|1 {
 		t.Errorf("inherit: %+v", x)
 	}
-	if _, ok := fx.attrs[filepath.Join(root, "skip/h")]; ok {
-		t.Error("skipped dir entered")
+	for _, p := range []string{"skip/h", "link", "fifo"} {
+		if _, ok := fx.attrs[filepath.Join(root, p)]; ok {
+			t.Errorf("%s was set", p)
+		}
 	}
 	if x := fx.attrs[filepath.Join(root, "d/f")]; x.Xflags != 0 {
 		t.Errorf("file flags: %+v", x)
@@ -351,6 +354,9 @@ func TestLinuxWalkErrors(t *testing.T) {
 	if err := l.Walk(ctx, filepath.Join(root, "missing"), 1, true, nil, 0); err == nil {
 		t.Fatal("missing root")
 	}
+	if err := l.Walk(ctx, filepath.Join(root, "d/f"), 1, true, nil, 0); !errors.Is(err, syscall.ENOTDIR) {
+		t.Fatalf("file as root: %v", err)
+	}
 	fx.fail[root] = syscall.EPERM
 	if err := l.Walk(ctx, root, 1, true, nil, 0); !errors.Is(err, syscall.EPERM) {
 		t.Fatalf("root set: %v", err)
@@ -373,18 +379,182 @@ func TestLinuxWalkErrors(t *testing.T) {
 		t.Fatalf("cancel: %v", err)
 	}
 
-	w := walker{ctx: ctx}
-	if err := w.dir(filepath.Join(root, "missing"), "/missing"); err != nil {
-		t.Fatalf("vanished dir: %v", err)
+	f, err := os.Open(filepath.Join(root, "d/f"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := w.dir(filepath.Join(root, "d/f"), "/d/f"); err == nil {
-		t.Fatal("not a directory")
-	}
-	if err := w.set(filepath.Join(root, "missing"), false); !vanished(err) {
-		t.Fatalf("vanished file: %v", err)
+	defer f.Close()
+	if err := (&walker{ctx: ctx}).dir(f, "/d/f"); !errors.Is(err, syscall.ENOTDIR) {
+		t.Fatalf("not a directory: %v", err)
 	}
 	if err := (&walker{ctx: ctx, tick: time.NewTicker(time.Millisecond)}).wait(); err != nil {
 		t.Fatal(err)
+	}
+	for _, e := range []error{syscall.ENOENT, syscall.ENOTDIR, syscall.ELOOP} {
+		if !changed(e) {
+			t.Errorf("%v must count as changed", e)
+		}
+	}
+	if changed(syscall.EACCES) {
+		t.Error("EACCES is not a changed entry")
+	}
+}
+
+func TestLinuxWalkUnreadableDirectory(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads everything")
+	}
+	useFakeXattr(t)
+	root := t.TempDir()
+	touch(t, filepath.Join(root, "d/f"))
+	if err := os.Chmod(filepath.Join(root, "d"), 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(filepath.Join(root, "d"), 0o755) })
+	if err := New("/").Walk(context.Background(), root, 1, true, nil, 0); !errors.Is(err, syscall.EACCES) {
+		t.Fatalf("unreadable: %v", err)
+	}
+}
+
+// A directory swapped for a symlink after the walker has seen it is not
+// followed; the target stays untouched.
+func TestLinuxWalkDoesNotFollowSwappedSymlink(t *testing.T) {
+	fx := useFakeXattr(t)
+	root := t.TempDir()
+	vol, outside := filepath.Join(root, "vol"), filepath.Join(root, "outside")
+	touch(t, filepath.Join(vol, "a/inside"))
+	touch(t, filepath.Join(outside, "secret"))
+	old := ioctl
+	hook := func(fd int, req uintptr, arg unsafe.Pointer) error {
+		if req == fsIOCSetXattr && fdPath(fd) == filepath.Join(vol, "a") {
+			os.Rename(filepath.Join(vol, "a"), filepath.Join(vol, "a.bak"))
+			os.Symlink(outside, filepath.Join(vol, "a"))
+		}
+		return old(fd, req, arg)
+	}
+	ioctl = hook
+	if err := New("/").Walk(context.Background(), vol, 7, true, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := fx.attrs[filepath.Join(outside, "secret")]; ok {
+		t.Fatal("walk left the tree through a symlink")
+	}
+	if fx.attrs[filepath.Join(vol, "a.bak", "inside")].Projid != 7 {
+		t.Fatal("renamed directory not walked")
+	}
+}
+
+// open refuses entries that are not what ReadDir reported.
+func TestLinuxWalkOpen(t *testing.T) {
+	root := t.TempDir()
+	touch(t, filepath.Join(root, "f"))
+	touch(t, filepath.Join(root, "d/x"))
+	if err := os.Symlink("d", filepath.Join(root, "l")); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Mkfifo(filepath.Join(root, "p"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	d, err := os.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	var st syscall.Stat_t
+	syscall.Fstat(int(d.Fd()), &st)
+	w := &walker{ctx: context.Background(), dev: st.Dev}
+	refused := []struct {
+		name string
+		mode uint32
+	}{{"l", syscall.S_IFDIR}, {"l", syscall.S_IFREG}, {"missing", syscall.S_IFREG}, {"p", syscall.S_IFREG},
+		{"f", syscall.S_IFDIR}, {"d", syscall.S_IFREG}}
+	for _, c := range refused {
+		if f, ok, err := w.open(d, c.name, c.mode); ok || err != nil {
+			t.Errorf("%s as %o: ok=%v err=%v", c.name, c.mode, ok, err)
+			f.Close()
+		}
+	}
+	if f, ok, err := w.open(d, "f", syscall.S_IFREG); !ok || err != nil {
+		t.Fatalf("regular file: %v %v", ok, err)
+	} else {
+		f.Close()
+	}
+	w.dev++
+	if f, ok, err := w.open(d, "f", syscall.S_IFREG); ok || err != nil {
+		t.Fatalf("other device: %v %v", ok, err)
+		f.Close()
+	}
+}
+
+// Entries replaced between ReadDir and open are skipped, not fatal. ReadDir
+// order is not defined, so only entries processed after the swap are checked.
+func TestLinuxWalkSkipsChangedEntries(t *testing.T) {
+	fx := useFakeXattr(t)
+	root := t.TempDir()
+	targets := []string{"file", "dir", "gone", "link"}
+	touch(t, filepath.Join(root, "trigger"))
+	touch(t, filepath.Join(root, "file"))
+	touch(t, filepath.Join(root, "dir/x"))
+	touch(t, filepath.Join(root, "gone/x"))
+	touch(t, filepath.Join(root, "link/x"))
+	old := ioctl
+	var after []string
+	swapped := false
+	ioctl = func(fd int, req uintptr, arg unsafe.Pointer) error {
+		p := fdPath(fd)
+		if req == fsIOCSetXattr && filepath.Dir(p) == root {
+			if swapped {
+				after = append(after, filepath.Base(p))
+			} else {
+				swapped = true
+				os.Remove(filepath.Join(root, "file"))
+				syscall.Mkfifo(filepath.Join(root, "file"), 0o644)
+				os.RemoveAll(filepath.Join(root, "dir"))
+				touch(t, filepath.Join(root, "dir"))
+				os.RemoveAll(filepath.Join(root, "gone"))
+				os.RemoveAll(filepath.Join(root, "link"))
+				os.Symlink(root, filepath.Join(root, "link"))
+			}
+		}
+		return old(fd, req, arg)
+	}
+	if err := New("/").Walk(context.Background(), root, 7, true, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range after {
+		for _, tg := range targets {
+			if p == tg {
+				t.Errorf("%s was set after it changed", p)
+			}
+		}
+	}
+	if fx.attrs[filepath.Join(root, "trigger")].Projid != 7 {
+		t.Fatal("trigger not set")
+	}
+}
+
+// The idle I/O priority applies to the walk only.
+func TestLinuxWalkRestoresIOPriority(t *testing.T) {
+	useFakeXattr(t)
+	idle := func() int {
+		n := 0
+		es, _ := os.ReadDir("/proc/self/task")
+		for _, e := range es {
+			tid, _ := strconv.Atoi(e.Name())
+			if r, _, _ := syscall.Syscall(syscall.SYS_IOPRIO_GET, ioprioWhoProcess, uintptr(tid), 0); r>>13 == ioprioClassIdle {
+				n++
+			}
+		}
+		return n
+	}
+	if idle() != 0 {
+		t.Skip("a thread is idle already")
+	}
+	if err := New("/").Walk(context.Background(), t.TempDir(), 1, true, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	if n := idle(); n != 0 {
+		t.Fatalf("%d threads left at idle priority", n)
 	}
 }
 

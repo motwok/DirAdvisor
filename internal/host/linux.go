@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -265,15 +266,27 @@ func (l *Linux) ZFSVersions() (string, string) {
 	return strings.TrimSpace(string(mod)), strings.TrimSpace(strings.Split(user, "\n")[0])
 }
 
+// Walk opens every directory and file relative to its parent (openat with
+// O_NOFOLLOW), so an entry swapped for a symlink during the walk is never
+// followed and the walk cannot leave the tree.
 func (l *Linux) Walk(ctx context.Context, root string, id uint32, inherit bool, skip map[string]bool, perSecond int) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	// Best effort: only use otherwise idle disk time.
+	// Best effort: only use otherwise idle disk time. The thread goes back to
+	// the pool afterwards, so the old priority is restored.
+	prio, _, _ := syscall.Syscall(syscall.SYS_IOPRIO_GET, ioprioWhoProcess, 0, 0)
 	syscall.Syscall(syscall.SYS_IOPRIO_SET, ioprioWhoProcess, 0, ioprioClassIdle<<13)
+	defer syscall.Syscall(syscall.SYS_IOPRIO_SET, ioprioWhoProcess, 0, prio)
 
 	croot := l.join(root)
+	fd, err := openNoFollow(croot, true)
+	if err != nil {
+		return err
+	}
+	d := os.NewFile(uintptr(fd), croot)
+	defer d.Close()
 	var st syscall.Stat_t
-	if err := syscall.Lstat(croot, &st); err != nil {
+	if err := syscall.Fstat(fd, &st); err != nil {
 		return err
 	}
 	w := walker{ctx: ctx, id: id, inherit: inherit, skip: skip, dev: st.Dev}
@@ -281,10 +294,10 @@ func (l *Linux) Walk(ctx context.Context, root string, id uint32, inherit bool, 
 		w.tick = time.NewTicker(time.Second / time.Duration(perSecond))
 		defer w.tick.Stop()
 	}
-	if err := w.set(croot, true); err != nil {
+	if err := w.set(fd, true); err != nil {
 		return err
 	}
-	return w.dir(croot, root)
+	return w.dir(d, root)
 }
 
 type walker struct {
@@ -306,12 +319,7 @@ func (w *walker) wait() error {
 	return w.ctx.Err()
 }
 
-func (w *walker) set(p string, dir bool) error {
-	fd, err := openNoFollow(p, dir)
-	if err != nil {
-		return err
-	}
-	defer syscall.Close(fd)
+func (w *walker) set(fd int, dir bool) error {
 	var x fsxattr
 	if err := ioctl(fd, fsIOCGetXattr, unsafe.Pointer(&x)); err != nil {
 		return err
@@ -327,45 +335,78 @@ func (w *walker) set(p string, dir bool) error {
 	return ioctl(fd, fsIOCSetXattr, unsafe.Pointer(&x))
 }
 
-func (w *walker) dir(cpath, hpath string) error {
-	es, err := os.ReadDir(cpath)
+// open opens a child of d without following symlinks. mode is the expected
+// file type; a changed entry (deleted, replaced, now a symlink) gives ok=false.
+func (w *walker) open(d *os.File, name string, mode uint32) (f *os.File, ok bool, err error) {
+	flags := syscall.O_RDONLY | syscall.O_NOFOLLOW | syscall.O_CLOEXEC | syscall.O_NONBLOCK
+	if mode == syscall.S_IFDIR {
+		flags |= syscall.O_DIRECTORY
+	}
+	fd, err := syscall.Openat(int(d.Fd()), name, flags, 0)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
+		if changed(err) {
+			return nil, false, nil
 		}
-		return err
+		return nil, false, err
 	}
-	for _, e := range es {
-		if err := w.wait(); err != nil {
-			return err
-		}
-		c, h := filepath.Join(cpath, e.Name()), filepath.Join(hpath, e.Name())
-		switch t := e.Type(); {
-		case t.IsDir():
-			if w.skip[h] {
-				continue
-			}
-			var st syscall.Stat_t
-			if syscall.Lstat(c, &st) != nil || st.Dev != w.dev {
-				continue
-			}
-			if err := w.set(c, true); err != nil && !vanished(err) {
-				return err
-			}
-			if err := w.dir(c, h); err != nil {
-				return err
-			}
-		case t.IsRegular():
-			if err := w.set(c, false); err != nil && !vanished(err) {
-				return err
-			}
-		}
+	f = os.NewFile(uintptr(fd), filepath.Join(d.Name(), name))
+	var st syscall.Stat_t
+	if syscall.Fstat(fd, &st) != nil || st.Mode&syscall.S_IFMT != mode || st.Dev != w.dev {
+		f.Close()
+		return nil, false, nil
 	}
-	return nil
+	return f, true, nil
 }
 
-func vanished(err error) bool {
-	return errors.Is(err, syscall.ENOENT) || errors.Is(err, syscall.ELOOP)
+func (w *walker) dir(d *os.File, hpath string) error {
+	for {
+		es, rerr := d.ReadDir(256)
+		for _, e := range es {
+			if err := w.wait(); err != nil {
+				return err
+			}
+			h := filepath.Join(hpath, e.Name())
+			var mode uint32
+			switch t := e.Type(); {
+			case t.IsDir():
+				if w.skip[h] {
+					continue
+				}
+				mode = syscall.S_IFDIR
+			case t.IsRegular():
+				mode = syscall.S_IFREG
+			default:
+				continue
+			}
+			c, ok, err := w.open(d, e.Name(), mode)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				continue
+			}
+			err = w.set(int(c.Fd()), mode == syscall.S_IFDIR)
+			if err == nil && mode == syscall.S_IFDIR {
+				err = w.dir(c, h)
+			}
+			c.Close()
+			if err != nil {
+				return err
+			}
+		}
+		if rerr != nil {
+			// ENOENT: the directory was deleted while being read.
+			if rerr == io.EOF || errors.Is(rerr, syscall.ENOENT) {
+				return nil
+			}
+			return rerr
+		}
+	}
+}
+
+// changed reports an open error that means the entry is not what ReadDir saw.
+func changed(err error) bool {
+	return errors.Is(err, syscall.ENOENT) || errors.Is(err, syscall.ENOTDIR) || errors.Is(err, syscall.ELOOP)
 }
 
 // SelfContainerID reads the own container ID, falling back to the hostname.

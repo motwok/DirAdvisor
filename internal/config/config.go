@@ -233,8 +233,8 @@ func (c *Config) validate(stat StatFunc) error {
 	if g.ReconcileInterval <= 0 || g.AdminActionLogInterval <= 0 || g.ImageUpdateCheck.Interval <= 0 {
 		return errors.New("global: durations must be greater than 0")
 	}
-	if g.WalkFilesPerSecond < 0 {
-		return errors.New("global.walk_files_per_second must not be negative")
+	if g.WalkFilesPerSecond < 0 || g.WalkFilesPerSecond > 1_000_000_000 {
+		return errors.New("global.walk_files_per_second must be between 0 and 1000000000")
 	}
 	if g.ProjectIDs.From < 1 || g.ProjectIDs.To <= g.ProjectIDs.From || g.ProjectIDs.To > 4294967294 {
 		return errors.New("global.project_ids: need 1 <= from < to <= 4294967294")
