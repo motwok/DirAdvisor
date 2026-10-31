@@ -35,8 +35,11 @@ type Entry struct {
 	Owner      string            `json:"owner,omitempty"`
 	Stack      string            `json:"stack,omitempty"`
 	Labels     map[string]string `json:"labels,omitempty"`
-	WorkingDir string            `json:"working_dir,omitempty"`
-	LastUsed   int64             `json:"last_used,omitempty"`
+	// ContainerLabels are the labels the owner container contributed, kept
+	// while no owner container exists.
+	ContainerLabels map[string]string `json:"container_labels,omitempty"`
+	WorkingDir      string            `json:"working_dir,omitempty"`
+	LastUsed        int64             `json:"last_used,omitempty"`
 	// PendingReset marks an entry whose ID is reset to ResetTo before release.
 	PendingReset bool   `json:"pending_reset,omitempty"`
 	ResetTo      uint32 `json:"reset_to,omitempty"`
@@ -45,6 +48,9 @@ type Entry struct {
 type State struct {
 	SchemaVersion int               `json:"schema_version"`
 	Entries       map[string]*Entry `json:"entries"`
+	// DockerRoot is the last DockerRootDir seen, so the exclusion works
+	// before Docker is reached after a restart.
+	DockerRoot string `json:"docker_root,omitempty"`
 }
 
 func New() *State {
@@ -53,6 +59,9 @@ func New() *State {
 
 func VolumeKey(name string) string { return "volume:" + name }
 func ConfigKey(path string) string { return "config:" + path }
+
+// ResetKey holds a pending reset whose original key was taken by another path.
+func ResetKey(path string) string { return "reset:" + path }
 
 // Load reads the state from dir. A missing file gives an empty state. An
 // unreadable or newer file is moved to state.json.bak; the returned error says

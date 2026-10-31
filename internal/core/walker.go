@@ -52,6 +52,9 @@ func (c *Core) RunWalker(ctx context.Context) {
 func (c *Core) nextJob() (walkJob, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if !c.rootKnown {
+		return walkJob{}, false
+	}
 	keys := make([]string, 0, len(c.st.Entries))
 	for k := range c.st.Entries {
 		keys = append(keys, k)
@@ -87,6 +90,12 @@ func (c *Core) job(key string, e *state.Entry, id uint32, inherit, reset bool) w
 	for k, o := range c.st.Entries {
 		if k != key && o.Path != e.Path && under(o.Path, e.Path) {
 			skip[o.Path] = true
+		}
+	}
+	// Unmeasurable candidates (foreign ID, no quota) are not in the state.
+	for p := range c.tops {
+		if p != e.Path && under(p, e.Path) {
+			skip[p] = true
 		}
 	}
 	for _, t := range append([]string{c.dockerRoot}, excludedTrees...) {

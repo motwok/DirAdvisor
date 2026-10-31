@@ -59,6 +59,7 @@ All metrics have the prefix `diradvisor_`; all are gauges except `reconcile_erro
 | `excluded_path` | bind volume pointing into an excluded tree | not measurable |
 | `project_ids_exhausted` | no free ID in `project_ids` | widen the range |
 | `quota_access_failed` | the quota state or usage of the filesystem could not be read | see [Troubleshooting.md](Troubleshooting.md#quota_access_failed) |
+| `docker_root_unknown` | Docker never answered since the first start, so its data directory is unknown | make the Docker socket reachable, or set `docker.enabled: false` |
 
 ## DirAdvisor itself
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/motwok/DirAdvisor/internal/config"
 	"github.com/motwok/DirAdvisor/internal/docker"
+	"github.com/motwok/DirAdvisor/internal/state"
 )
 
 const selfServicePrefix = "diradvisor.label."
@@ -22,24 +23,34 @@ func isOwnLabel(n string) bool {
 
 // volumeLabels resolves the additional labels of a volume (spec LBL-2). Names
 // from Docker labels are only sanitized, so a name that is still invalid
-// (starts with a digit or "__", or is empty) is dropped here (LBL-3).
-func volumeLabels(cfg *config.Config, vol docker.Volume, path string, o ownership, prev map[string]string) map[string]string {
-	out := map[string]string{}
+// (starts with a digit or "__", or is empty) is dropped here (LBL-3). ctr are
+// the labels the owner container contributed; prevCtr replaces them while no
+// owner container exists (LBL-4).
+func volumeLabels(cfg *config.Config, vol docker.Volume, path string, o ownership, prevCtr map[string]string) (out, ctr map[string]string) {
+	out, ctr = map[string]string{}, map[string]string{}
 	set := func(k, v string) {
 		if v != "" && !isOwnLabel(k) && config.ValidLabelName(k) {
 			out[k] = v
 		}
 	}
+	fromContainer := func(k, v string) {
+		if v != "" && !isOwnLabel(k) && config.ValidLabelName(k) {
+			ctr[k] = v
+		}
+	}
 	// Lowest priority first, later sources overwrite.
 	if o.OwnerC != nil {
 		for _, r := range cfg.Docker.ContainerLabels {
-			set(r.Target("container_label_"), o.OwnerC.Labels[r.From])
+			fromContainer(r.Target("container_label_"), o.OwnerC.Labels[r.From])
 		}
 	} else {
-		for k, v := range prev {
-			if strings.HasPrefix(k, "container_label_") || isAllowlistTarget(cfg.Docker.ContainerLabels, k) {
-				set(k, v)
-			}
+		for k, v := range prevCtr {
+			fromContainer(k, v)
+		}
+	}
+	for k, v := range ctr {
+		if strings.HasPrefix(k, "container_label_") || isAllowlistTarget(cfg.Docker.ContainerLabels, k) {
+			set(k, v)
 		}
 	}
 	for _, r := range cfg.Docker.VolumeLabels {
@@ -53,8 +64,13 @@ func volumeLabels(cfg *config.Config, vol docker.Volume, path string, o ownershi
 	if o.OwnerC != nil {
 		for k, v := range o.OwnerC.Labels {
 			if strings.HasPrefix(k, selfServicePrefix) {
-				set(config.SanitizeLabelName(strings.TrimPrefix(k, selfServicePrefix)), v)
+				fromContainer(config.SanitizeLabelName(strings.TrimPrefix(k, selfServicePrefix)), v)
 			}
+		}
+	}
+	for k, v := range ctr {
+		if !strings.HasPrefix(k, "container_label_") && !isAllowlistTarget(cfg.Docker.ContainerLabels, k) {
+			set(k, v)
 		}
 	}
 	for _, rule := range cfg.Docker.Labels {
@@ -62,6 +78,21 @@ func volumeLabels(cfg *config.Config, vol docker.Volume, path string, o ownershi
 			for k, v := range rule.Labels {
 				set(k, v)
 			}
+		}
+	}
+	return out, ctr
+}
+
+// containerLabelsOf returns the remembered container labels; states written
+// before they were stored separately get the allowlisted ones from Labels.
+func containerLabelsOf(cfg *config.Config, e *state.Entry) map[string]string {
+	if e.ContainerLabels != nil || e.Labels == nil {
+		return e.ContainerLabels
+	}
+	out := map[string]string{}
+	for k, v := range e.Labels {
+		if strings.HasPrefix(k, "container_label_") || isAllowlistTarget(cfg.Docker.ContainerLabels, k) {
+			out[k] = v
 		}
 	}
 	return out

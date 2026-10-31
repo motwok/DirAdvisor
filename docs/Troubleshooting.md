@@ -11,7 +11,7 @@ Start with `docker logs diradvisor` and the series `diradvisor_admin_action_need
 | exits with code 1, log `invalid config` | the config file is invalid | fix the line named in the log |
 | exits with code 1, log `unsupported Docker` | Docker API older than 1.41 | update Docker |
 | exits with code 2 | unknown flag or value | check the command line |
-| `/-/ready` stays 503, `reconcile_errors_total` grows | Docker socket not reachable | mount `/var/run/docker.sock`; configured directories are measured anyway |
+| `/-/ready` stays 503, `reconcile_errors_total` grows | Docker socket not reachable | mount `/var/run/docker.sock`; configured directories are measured anyway once Docker answered at least once (see `docker_root_unknown`) |
 | `directory_unmeasurable{reason="quota_access_failed"}`, log `quotactl_fd ... operation not permitted` | capabilities or seccomp | add `SYS_ADMIN`; if that is not enough, try `privileged: true` |
 | `listen failed` | port in use (cAdvisor also uses 8080) | map another host port or set `--web.listen-address` |
 
@@ -74,6 +74,13 @@ If the directory is gone for good, remove it from the config.
 ### `project_ids_exhausted`
 
 All IDs in `global.project_ids` are in use. Widen the range; IDs already assigned stay valid.
+
+### `docker_root_unknown`
+
+Docker is enabled but has never answered since the first start, so DirAdvisor does not know Docker's
+data directory, which it must never walk into. Configured directories wait until Docker answers once;
+after that the directory is remembered across restarts. Without Docker on this host set
+`docker.enabled: false`.
 
 ### `quota_access_failed`
 
