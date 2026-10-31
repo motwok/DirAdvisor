@@ -97,6 +97,12 @@ func migrate(s *State) {
 	if s.Entries == nil {
 		s.Entries = map[string]*Entry{}
 	}
+	// A null entry (hand edit) would panic on first use.
+	for k, e := range s.Entries {
+		if e == nil {
+			delete(s.Entries, k)
+		}
+	}
 	s.SchemaVersion = SchemaVersion
 }
 
