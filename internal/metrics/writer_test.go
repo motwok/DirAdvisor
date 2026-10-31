@@ -15,6 +15,7 @@ func TestWrite(t *testing.T) {
 		{Name: "a_bytes", Help: "Bytes.\nline", Type: "gauge", Samples: []Sample{
 			{Labels: map[string]string{"path": `/x "q" \ y`, "empty": "", "b": "1"}, Value: 1536},
 			{Labels: nil, Value: 2e10},
+			{Labels: map[string]string{"path": "/home/j\xf6rg"}, Value: 3},
 		}},
 		{Name: "unused", Help: "x", Type: "gauge"},
 		{Name: "c_total", Help: "C.", Type: "counter", Samples: []Sample{
@@ -28,6 +29,7 @@ func TestWrite(t *testing.T) {
 # TYPE a_bytes gauge
 a_bytes{b="1",path="/x \"q\" \\ y"} 1536
 a_bytes 2e+10
+a_bytes{path="/home/j�rg"} 3
 # HELP c_total C.
 # TYPE c_total counter
 c_total +Inf

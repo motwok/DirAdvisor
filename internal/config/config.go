@@ -205,7 +205,8 @@ func (c *Config) expand(lookup LookupFunc) error {
 
 var labelName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
-func validLabelName(n string) bool {
+// ValidLabelName reports whether n is a Prometheus label name that is not reserved.
+func ValidLabelName(n string) bool {
 	return labelName.MatchString(n) && !strings.HasPrefix(n, "__")
 }
 
@@ -219,7 +220,7 @@ func isOwn(n string) bool {
 }
 
 func checkLabelName(where, n string, allowStackOwner bool) error {
-	if !validLabelName(n) {
+	if !ValidLabelName(n) {
 		return fmt.Errorf("%s: invalid label name %q", where, n)
 	}
 	if isOwn(n) && !(allowStackOwner && (n == "stack" || n == "owner")) {

@@ -27,7 +27,8 @@ type Sample struct {
 }
 
 // Write writes all families with at least one sample. Labels with empty values
-// are left out.
+// are left out. Invalid UTF-8 (directory names from disk) is replaced, because
+// Prometheus rejects the whole scrape otherwise.
 func Write(w io.Writer, fams []Family) error {
 	bw := bufio.NewWriter(w)
 	for _, f := range fams {
@@ -71,8 +72,8 @@ func writeLabels(bw *bufio.Writer, l map[string]string) {
 var valueEscaper = strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`)
 var helpEscaper = strings.NewReplacer(`\`, `\\`, "\n", `\n`)
 
-func escapeValue(s string) string { return valueEscaper.Replace(s) }
-func escapeHelp(s string) string  { return helpEscaper.Replace(s) }
+func escapeValue(s string) string { return valueEscaper.Replace(strings.ToValidUTF8(s, "�")) }
+func escapeHelp(s string) string  { return helpEscaper.Replace(strings.ToValidUTF8(s, "�")) }
 
 func formatValue(v float64) string {
 	switch {
