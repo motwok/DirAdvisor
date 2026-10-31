@@ -77,6 +77,7 @@ func TestInvalid(t *testing.T) {
 		"zero duration":    "global: { reconcile_interval: 0s }",
 		"bad duration":     "global: { reconcile_interval: soon }",
 		"negative rate":    "global: { walk_files_per_second: -1 }",
+		"huge rate":        "global: { walk_files_per_second: 2000000000 }",
 		"range order":      "global: { project_ids: { from: 10, to: 10 } }",
 		"range zero":       "global: { project_ids: { from: 0, to: 10 } }",
 		"range max":        "global: { project_ids: { from: 1, to: 4294967295 } }",
