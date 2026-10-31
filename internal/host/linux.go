@@ -97,7 +97,33 @@ var (
 	ioctl         = sysIoctl
 	quotactlNext  = sysQuotactlNext
 	runTool       = (*Linux).run
+	kernelRelease = sysKernelRelease
 )
+
+func sysKernelRelease() string {
+	var u syscall.Utsname
+	if syscall.Uname(&u) != nil {
+		return ""
+	}
+	b := make([]byte, 0, len(u.Release))
+	for _, c := range u.Release {
+		if c == 0 {
+			break
+		}
+		b = append(b, byte(c))
+	}
+	return string(b)
+}
+
+// kernelBefore reports whether the running kernel is older than major.minor.
+// An unparsable release counts as new.
+func kernelBefore(major, minor int) bool {
+	var ma, mi int
+	if n, _ := fmt.Sscanf(kernelRelease(), "%d.%d", &ma, &mi); n < 2 {
+		return false
+	}
+	return ma < major || ma == major && mi < minor
+}
 
 func (l *Linux) MountOf(p string) (Mount, error) {
 	f, err := os.Open(mountinfoPath)
@@ -161,8 +187,11 @@ func (l *Linux) QuotaStatus(m Mount) (string, error) {
 		switch {
 		case err == nil || errors.Is(err, syscall.ENOENT):
 			return "", nil
-		case errors.Is(err, syscall.ENOSYS):
+		case errors.Is(err, syscall.ENOSYS) && kernelBefore(5, 14):
 			return UpgradeKernel, nil
+		case errors.Is(err, syscall.ENOSYS) && m.FSType == "xfs":
+			// XFS answers ENOSYS when no quota type is accounted at all.
+			return MountWithPrjquota, nil
 		case errors.Is(err, syscall.ESRCH):
 			if m.FSType == "ext4" {
 				return EnableProjectQuotaFeature, nil

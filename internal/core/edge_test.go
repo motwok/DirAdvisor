@@ -51,13 +51,13 @@ func TestMountAndQuotaErrors(t *testing.T) {
 	e.fs.mountErr = map[string]error{"/srv/a": errors.New("no mount")}
 	e.fs.idErr = map[string]error{"/srv/b": errors.New("eio")}
 	e.reconcile()
-	if e.entry("/srv/a") != nil || e.reason("/srv/a") != "" || e.reason("/srv/b") != reasonPathMissing {
+	if e.entry("/srv/a") != nil || e.reason("/srv/a") != reasonQuotaAccess || e.reason("/srv/b") != reasonPathMissing {
 		t.Fatalf("entries %+v unmeas %+v", e.c.view.entries, e.c.view.unmeas)
 	}
 	e.fs.quotaErr = errors.New("quotactl")
 	e.reconcile()
-	if len(e.c.view.entries) != 0 {
-		t.Fatalf("quota error: %+v", e.c.view.entries)
+	if len(e.c.view.entries) != 0 || e.reason("/srv/b") != reasonQuotaAccess {
+		t.Fatalf("quota error: %+v %+v", e.c.view.entries, e.c.view.unmeas)
 	}
 }
 

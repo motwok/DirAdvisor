@@ -87,7 +87,7 @@ func TestExhaustedAndUsageError(t *testing.T) {
 	e2.fs.usageErr = errors.New("eperm")
 	e2.volume("a", nil, nil)
 	e2.reconcile()
-	if e2.reason("/var/lib/docker/volumes/a/_data") != reasonExhausted {
+	if e2.reason("/var/lib/docker/volumes/a/_data") != reasonQuotaAccess {
 		t.Fatalf("usage error: %+v", e2.c.view.unmeas)
 	}
 	if strings.Contains(e2.metricsText(), "directory_bytes") {
