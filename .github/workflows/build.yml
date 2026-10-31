@@ -119,7 +119,7 @@ jobs:
         id: changed
         run: |
           last=$(git describe --tags --abbrev=0 2>/dev/null || true)
-          if [ -z "$last" ] || ! git diff --quiet "$last" HEAD -- '*.go' go.mod go.sum Dockerfile; then
+          if [ -z "$last" ] || ! git diff --quiet "$last" HEAD -- '*.go' ':(exclude)*_test.go' go.mod go.sum Dockerfile; then
             echo "release=true" >> "$GITHUB_OUTPUT"
           else
             echo "release=false" >> "$GITHUB_OUTPUT"
