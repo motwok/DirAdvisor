@@ -53,11 +53,17 @@ type Core struct {
 	now      func() time.Time
 	view     view
 	walkable map[string]bool
-	failed   map[string]time.Time
-	wake     chan struct{}
+	// tops are the paths of all candidates of the last reconcile; walks do
+	// not enter them.
+	tops   map[string]bool
+	failed map[string]time.Time
+	wake   chan struct{}
 
 	versionOK  bool
 	dockerRoot string
+	// rootKnown is false while Docker is enabled but its root directory was
+	// never seen; configured directories wait, so no walk can enter it.
+	rootKnown  bool
 	ready      bool
 	recErrors  float64
 	recSeconds float64
@@ -106,6 +112,7 @@ func New(cfg *config.Config, o Options) *Core {
 		cfg: cfg, st: st, saved: saved, fs: o.FS, dk: o.Docker, storage: o.StorageDir, self: o.SelfID,
 		log: o.Log, now: o.Now, walkable: map[string]bool{}, failed: map[string]time.Time{},
 		wake: make(chan struct{}, 1), reloadOK: true, logged: map[string]time.Time{},
+		dockerRoot: st.DockerRoot, rootKnown: st.DockerRoot != "" || !cfg.Docker.Enabled || o.Docker == nil,
 	}
 }
 

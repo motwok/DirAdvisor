@@ -232,8 +232,8 @@ func TestLabelRuleMismatch(t *testing.T) {
 		{Match: config.Match{Path: "/srv/*"}, Labels: map[string]string{"y": "1"}},
 	}
 	o := ownership{Stack: "app"}
-	l := volumeLabels(cfg, docker.Volume{Name: "v"}, volPath, o, map[string]string{"renamed": "keep", "plain": "drop"})
-	if l["renamed"] != "keep" || l["plain"] != "" || l["x"] != "" || l["y"] != "" {
+	l, _ := volumeLabels(cfg, docker.Volume{Name: "v"}, volPath, o, map[string]string{"renamed": "keep", "plain": "drop"})
+	if l["renamed"] != "keep" || l["plain"] != "drop" || l["x"] != "" || l["y"] != "" {
 		t.Fatalf("%v", l)
 	}
 }

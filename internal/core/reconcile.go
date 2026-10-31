@@ -25,6 +25,7 @@ const (
 	reasonDuplicatePath   = "duplicate_path"
 	reasonUnsupportedDrv  = "unsupported_volume_driver"
 	reasonQuotaAccess     = "quota_access_failed"
+	reasonRootUnknown     = "docker_root_unknown"
 	defaultDockerRoot     = "/var/lib/docker"
 	retryFailedWalksAfter = 10 * time.Minute
 )
@@ -103,9 +104,10 @@ func (c *Core) Reconcile(ctx context.Context) error {
 		c.log.Warn("Docker not reachable", "err", derr)
 	}
 	if snap.ok {
-		c.dockerRoot = snap.root
+		c.dockerRoot, c.st.DockerRoot = snap.root, snap.root
 	}
 	root := c.dockerRoot
+	c.rootKnown = !cfg.Docker.Enabled || c.dk == nil || root != ""
 
 	cands, protected, excludedVols := c.candidates(cfg, snap, root)
 	c.dedupe(cands)
@@ -113,6 +115,10 @@ func (c *Core) Reconcile(ctx context.Context) error {
 
 	v := view{}
 	c.walkable = map[string]bool{}
+	c.tops = map[string]bool{}
+	for _, cd := range cands {
+		c.tops[cd.path] = true
+	}
 	statusCache := map[string]statusResult{}
 	idRange := cfg.Global.ProjectIDs
 	now := c.now()
@@ -131,6 +137,10 @@ func (c *Core) Reconcile(ctx context.Context) error {
 		exists, isDir := c.fs.Stat(cd.path)
 		if !exists || !isDir {
 			v.unmeas = append(v.unmeas, unmeasurable{cd.path, reasonPathMissing})
+			continue
+		}
+		if !c.rootKnown && cd.source == state.SourceConfig {
+			v.unmeas = append(v.unmeas, unmeasurable{cd.path, reasonRootUnknown})
 			continue
 		}
 		m, err := c.fs.MountOf(cd.path)
@@ -177,7 +187,7 @@ func (c *Core) Reconcile(ctx context.Context) error {
 				if o.Used {
 					e.LastUsed = now.Unix()
 				}
-				e.Labels = volumeLabels(cfg, *cd.vol, cd.path, o, e.Labels)
+				e.Labels, e.ContainerLabels = volumeLabels(cfg, *cd.vol, cd.path, o, containerLabelsOf(cfg, e))
 				ev.State = o.State
 			} else {
 				ev.State = c.lastState(cd.key)
@@ -371,6 +381,10 @@ func (c *Core) dedupe(cands []*candidate) {
 		win := group[0]
 		for _, l := range group[1:] {
 			l.reason = reasonDuplicatePath
+			if l.key == win.key {
+				// Glob match and explicit path: same key, same entry.
+				continue
+			}
 			le := c.st.Entries[l.key]
 			if le == nil || le.ProjectID == 0 {
 				continue
@@ -431,7 +445,17 @@ func (c *Core) ensureID(cd *candidate, m host.Mount, r config.IDRange) (*state.E
 	inRange := func(id uint32) bool { return int64(id) >= r.From && int64(id) <= r.To }
 	e := c.st.Entries[cd.key]
 	if e != nil && e.PendingReset {
-		e.PendingReset, e.ResetTo, e.WalkDone = false, 0, false
+		if e.Path == cd.path {
+			e.PendingReset, e.ResetTo, e.WalkDone = false, 0, false
+		} else {
+			// Same key, other path (volume re-created elsewhere): the reset
+			// goes on under its own key, the candidate starts fresh (PID-12).
+			if _, busy := c.st.Entries[state.ResetKey(e.Path)]; !busy {
+				c.st.Entries[state.ResetKey(e.Path)] = e
+			}
+			delete(c.st.Entries, cd.key)
+			e = nil
+		}
 	}
 	if e != nil && e.ProjectID != 0 {
 		if e.WalkDone {

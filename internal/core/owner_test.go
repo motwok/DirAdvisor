@@ -107,7 +107,7 @@ func TestLabels(t *testing.T) {
 	c.Labels["diradvisor.label."] = "x"
 	vol.Labels["diradvisor.label.__x"] = "x"
 	o := ownership{Owner: "app-web-1", Stack: "app", OwnerC: &c}
-	l := volumeLabels(cfg, vol, volPath, o, nil)
+	l, ctr := volumeLabels(cfg, vol, volPath, o, nil)
 	want := map[string]string{
 		"container_label_com_example_team": "ops", "renamed": "y", "volume_label_retention": "30d",
 		"team": "rule", "site_a": "home", "tier": "hot",
@@ -120,10 +120,13 @@ func TestLabels(t *testing.T) {
 			t.Errorf("%s = %q, want %q (all %+v)", k, l[k], v, l)
 		}
 	}
+	if len(ctr) != 4 || ctr["container_label_com_example_team"] != "ops" || ctr["renamed"] != "y" || ctr["site_a"] != "home" || ctr["team"] != "ctr" {
+		t.Fatalf("container labels: %+v", ctr)
+	}
 	// Without owner container the container-derived labels come from the state.
-	l = volumeLabels(cfg, vol, volPath, ownership{Stack: "app"}, map[string]string{"container_label_com_example_team": "old", "renamed": "r"})
-	if l["container_label_com_example_team"] != "old" || l["renamed"] != "r" || l["team"] != "rule" {
-		t.Fatalf("from state: %+v", l)
+	l, ctr = volumeLabels(cfg, vol, volPath, ownership{Stack: "app"}, map[string]string{"container_label_com_example_team": "old", "renamed": "r", "site_a": "x"})
+	if l["container_label_com_example_team"] != "old" || l["renamed"] != "r" || l["site_a"] != "x" || l["team"] != "rule" || len(ctr) != 3 {
+		t.Fatalf("from state: %+v %+v", l, ctr)
 	}
 }
 
