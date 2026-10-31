@@ -3,7 +3,9 @@ name: Release Drafter
 on:
   push:
     branches: [master]
-  pull_request:
+  # pull_request_target: labels need write access also for pull requests from
+  # forks; the autolabeler checks out nothing and runs no code from the PR.
+  pull_request_target:
     types: [opened, reopened, synchronize, edited]
 
 permissions:
@@ -11,13 +13,13 @@ permissions:
 
 jobs:
   autolabel:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request_target'
     permissions:
       contents: read
       pull-requests: write
     runs-on: ubuntu-latest
     steps:
-      - uses: release-drafter/release-drafter/autolabeler@v7
+      - uses: release-drafter/release-drafter/autolabeler@978bb0b30c5ee8cdd332ced253758157150d43f0 # v7.10.0
         with:
           config-name: release-drafter.yml
 
@@ -28,7 +30,7 @@ jobs:
       pull-requests: read
     runs-on: ubuntu-latest
     steps:
-      - uses: release-drafter/release-drafter@v7
+      - uses: release-drafter/release-drafter@978bb0b30c5ee8cdd332ced253758157150d43f0 # v7.10.0
         with:
           config-name: release-drafter.yml
         env:
