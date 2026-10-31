@@ -35,13 +35,16 @@ type fakeFS struct {
 	status   map[string]string
 	usage    map[uint32]host.Usage
 	usageErr error
-	walks    []walkCall
-	walkErr  error
-	onWalk   func()
-	mountErr map[string]error
-	quotaErr error
-	listErr  error
-	idErr    map[string]error
+	// usageCalls counts Usage calls; onUsage runs inside each (no lock held).
+	usageCalls int
+	onUsage    func()
+	walks      []walkCall
+	walkErr    error
+	onWalk     func()
+	mountErr   map[string]error
+	quotaErr   error
+	listErr    error
+	idErr      map[string]error
 }
 
 func newFS() *fakeFS {
@@ -112,6 +115,13 @@ func (f *fakeFS) QuotaStatus(m host.Mount) (string, error) { return f.status[m.P
 func (f *fakeFS) ZFSVersions() (string, string)            { return "", "" }
 
 func (f *fakeFS) Usage(_ context.Context, _ host.Mount, minID uint32) (map[uint32]host.Usage, error) {
+	f.mu.Lock()
+	f.usageCalls++
+	hook := f.onUsage
+	f.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.usageErr != nil {

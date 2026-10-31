@@ -45,10 +45,10 @@ func splitRef(ref string) (repo, tag string, digest bool) {
 
 // CheckImage runs one image update check (spec section 14).
 func (c *Core) CheckImage(ctx context.Context) {
-	c.mu.Lock()
-	cfg := c.cfg
-	s := c.img
-	c.mu.Unlock()
+	cfg := c.Config()
+	c.pub.mu.Lock()
+	s := c.pub.img
+	c.pub.mu.Unlock()
 
 	s.enabled = cfg.Global.ImageUpdateCheck.Enabled
 	if !s.enabled || c.dk == nil || c.self == "" {
@@ -102,9 +102,9 @@ func normalizeRepo(r string) string {
 }
 
 func (c *Core) setImage(s imageState) {
-	c.mu.Lock()
-	c.img = s
-	c.mu.Unlock()
+	c.pub.mu.Lock()
+	c.pub.img = s
+	c.pub.mu.Unlock()
 }
 
 // RunImageCheck checks at start and then every interval until ctx ends.

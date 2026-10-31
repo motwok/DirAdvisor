@@ -169,6 +169,7 @@ func TestCollectEdges(t *testing.T) {
 		t.Fatalf("metrics:\n%s", txt)
 	}
 	e.fs.usageErr = errors.New("eperm")
+	e.now = e.now.Add(usageTTL)
 	if strings.Contains(e.metricsText(), "directory_bytes{") {
 		t.Fatal("no byte samples without usage")
 	}

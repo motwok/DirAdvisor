@@ -16,6 +16,8 @@ All metrics have the prefix `diradvisor_`; all are gauges except `reconcile_erro
 
 - `path` is the host path. `source` is `volume` or `config`. `volume` is the volume name (empty for
   configured directories).
+- Values are read from the filesystem at scrape time; scrapes within 2 s of each other share one
+  reading.
 - `state` (volumes only): `running` (owner runs), `stopped` (owner or stack known, not running),
   `unused`.
 - Labels that change (`owner`, `state`, `project_id`) are on `directory_info`, so the value series stay

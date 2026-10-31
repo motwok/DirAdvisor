@@ -55,7 +55,12 @@ func useQuotactl(t *testing.T, fn func(id uint32, d *nextdqblk) error) {
 
 func useRunTool(t *testing.T, fn func(bin string, args []string) (string, error)) {
 	old := runTool
-	runTool = func(_ *Linux, _ context.Context, bin string, args ...string) (string, error) { return fn(bin, args) }
+	runTool = func(_ *Linux, ctx context.Context, bin string, args ...string) (string, error) {
+		if _, ok := ctx.Deadline(); !ok {
+			t.Errorf("%s %v: no timeout", bin, args)
+		}
+		return fn(bin, args)
+	}
 	t.Cleanup(func() { runTool = old })
 }
 

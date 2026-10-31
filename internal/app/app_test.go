@@ -65,9 +65,28 @@ func newServer(t *testing.T, cfgText string) *Server {
 	fs := host.New("/")
 	cfg := config.Default()
 	cfg.Docker.Enabled = false
-	s := &Server{Flags: Flags{ConfigFile: file}, Log: log, FS: fs, reload: make(chan chan error), trigger: make(chan struct{}, 1)}
+	s := &Server{Flags: Flags{ConfigFile: file}, Log: log, FS: fs, reload: make(chan chan error), trigger: make(chan struct{}, 1), done: make(chan struct{})}
 	s.Core = core.New(cfg, core.Options{FS: fs, StorageDir: dir, Log: log})
 	return s
+}
+
+// After the loop stopped, a reload request gets a 503 instead of hanging.
+func TestReloadAfterStop(t *testing.T) {
+	s := newServer(t, "")
+	close(s.done)
+	if code, _ := get(t, s.Handler(), "POST", "/-/reload"); code != 503 {
+		t.Fatalf("code %d", code)
+	}
+}
+
+// A cancelled context stops the loop before the first reconcile.
+func TestLoopStopsOnCancelledContext(t *testing.T) {
+	s := newServer(t, "")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if code := s.loop(ctx, nil); code != 0 || s.Core.Ready() {
+		t.Fatalf("code %d ready %v", code, s.Core.Ready())
+	}
 }
 
 func get(t *testing.T, h http.Handler, method, p string) (int, string) {
