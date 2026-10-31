@@ -1,18 +1,29 @@
 name: Dependabot auto-merge
 
-on: pull_request
+# Merges done with GITHUB_TOKEN start no workflow, so the build is started
+# here right after merging.
+on:
+  schedule:
+    - cron: '30 4 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 jobs:
-  automerge:
-    if: github.event.pull_request.user.login == 'dependabot[bot]'
+  merge:
     runs-on: ubuntu-latest
     steps:
-      - name: Merge when checks pass
-        run: gh pr merge --auto --squash "$PR_URL"
+      - name: Merge green Dependabot PRs, then build
+        run: |
+          merged=0
+          for pr in $(gh pr list --repo "$REPO" --author 'app/dependabot' --state open \
+              --json number,mergeStateStatus --jq '.[] | select(.mergeStateStatus == "CLEAN") | .number'); do
+            gh pr merge --repo "$REPO" --squash --delete-branch "$pr" && merged=1
+          done
+          [ "$merged" = 0 ] || gh workflow run build.yml --repo "$REPO" --ref master
         env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
+          REPO: ${{ github.repository }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
