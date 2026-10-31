@@ -55,6 +55,14 @@ func TestContainerID(t *testing.T) {
 	if got := ContainerIDFrom(mountinfo, ""); got != id {
 		t.Fatalf("mountinfo: %q", got)
 	}
+	other := "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+	shm := "35 30 0:60 / /host/var/lib/docker/containers/" + other + "/mounts/shm rw - tmpfs shm rw\n"
+	if got := ContainerIDFrom(shm+mountinfo, ""); got != id {
+		t.Fatalf("propagated mount of another container won: %q", got)
+	}
+	if got := ContainerIDFrom(shm, ""); got != "" {
+		t.Fatalf("no own bind: %q", got)
+	}
 	if got := ContainerIDFrom("", "0::/system.slice/docker-"+id+".scope\n"); got != id {
 		t.Fatalf("cgroup v2: %q", got)
 	}

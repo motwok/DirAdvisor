@@ -50,10 +50,16 @@ type Container struct {
 	Mounts  []Mount           `json:"Mounts"`
 }
 
-// Name is the container name without the leading slash.
+// Name is the container name without the leading slash. Legacy links add
+// aliases like "/other/alias" in no fixed order; those are skipped.
 func (c Container) Name() string {
 	if len(c.Names) == 0 {
 		return c.ID
+	}
+	for _, n := range c.Names {
+		if n = strings.TrimPrefix(n, "/"); !strings.Contains(n, "/") {
+			return n
+		}
 	}
 	return strings.TrimPrefix(c.Names[0], "/")
 }
@@ -108,16 +114,20 @@ func (c *Client) get(ctx context.Context, p string, out any) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		var m struct {
-			Message string `json:"message"`
-		}
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		if json.Unmarshal(b, &m) != nil || m.Message == "" {
-			m.Message = strings.TrimSpace(string(b))
-		}
-		return &APIError{Status: resp.StatusCode, Message: m.Message}
+		return apiError(resp)
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+func apiError(resp *http.Response) error {
+	var m struct {
+		Message string `json:"message"`
+	}
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if json.Unmarshal(b, &m) != nil || m.Message == "" {
+		m.Message = strings.TrimSpace(string(b))
+	}
+	return &APIError{Status: resp.StatusCode, Message: m.Message}
 }
 
 // CheckVersion reads the daemon's API version and fails below MinAPIVersion.
@@ -132,6 +142,10 @@ func (c *Client) CheckVersion(ctx context.Context) (version string, reached bool
 		return "", false, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		// A socket proxy denying /version must not read as "too old".
+		return "", true, apiError(resp)
+	}
 	var v struct {
 		APIVersion string `json:"ApiVersion"`
 	}
