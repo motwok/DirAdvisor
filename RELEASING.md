@@ -2,7 +2,7 @@
 
 DirAdvisor is released as a container image, `ghcr.io/motwok/diradvisor`, with
 [Semantic Versioning](https://semver.org) (0.x before 1.0). **Every merge into `master` that changes the
-image is a release**, that is changes to Go code, `go.mod`/`go.sum` or the `Dockerfile`. Merges that
+image is a release**, that is changes to Go code (not tests), `go.mod`/`go.sum` or the `Dockerfile`. Merges that
 only touch documentation or CI build nothing new; they are listed in the next real release. There is no
 manual release step: merging a pull request is the approval.
 
