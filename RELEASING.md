@@ -34,7 +34,7 @@ flowchart LR
 2. The Build workflow builds the image from the pinned `golang` build image, without cache. The result
    is `FROM scratch` and contains only the static binary.
 3. The **smoke test** starts the image and checks that `/metrics` answers. If it fails, there is no
-   release and nothing is published.
+   release and nothing is published. The same holds when the test coverage is below 99%.
 4. On success the release `vX.Y.Z` is published with notes generated from the merged pull requests, and
    the image is pushed as `:X.Y.Z` and `:latest`.
 
