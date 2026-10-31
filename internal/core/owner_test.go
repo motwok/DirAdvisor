@@ -132,34 +132,34 @@ func TestLabels(t *testing.T) {
 
 func TestImageCheck(t *testing.T) {
 	e := newEnv(t)
-	if e.c.img.mode() != "disabled" {
+	if e.c.pub.img.mode() != "disabled" {
 		t.Fatal("default disabled")
 	}
 	e.cfg.Global.ImageUpdateCheck.Enabled = true
 	e.c.CheckImage(context.Background())
-	if e.c.img.mode() != "unknown" {
-		t.Fatalf("unknown expected, got %s", e.c.img.mode())
+	if e.c.pub.img.mode() != "unknown" {
+		t.Fatalf("unknown expected, got %s", e.c.pub.img.mode())
 	}
 	e.dk.self = docker.ContainerJSON{ID: "self0000000000", Image: "sha256:1"}
 	e.dk.self.Config.Image = "ghcr.io/motwok/diradvisor:1.0.0"
 	e.c.CheckImage(context.Background())
-	if e.c.img.mode() != "pinned" {
+	if e.c.pub.img.mode() != "pinned" {
 		t.Fatal("pinned expected")
 	}
 	e.dk.self.Config.Image = "ghcr.io/motwok/diradvisor"
 	e.dk.digests = []string{"ghcr.io/motwok/diradvisor@sha256:aa"}
 	e.dk.remote = "sha256:aa"
 	e.c.CheckImage(context.Background())
-	if e.c.img.mode() != "latest" || e.c.img.available || !e.c.img.success {
-		t.Fatalf("same: %+v", e.c.img)
+	if e.c.pub.img.mode() != "latest" || e.c.pub.img.available || !e.c.pub.img.success {
+		t.Fatalf("same: %+v", e.c.pub.img)
 	}
 	e.dk.remote = "sha256:bb"
 	e.c.CheckImage(context.Background())
-	first := e.c.img.since
+	first := e.c.pub.img.since
 	e.now = e.now.Add(3600e9)
 	e.c.CheckImage(context.Background())
-	if !e.c.img.available || e.c.img.since != first || first == 0 {
-		t.Fatalf("available: %+v", e.c.img)
+	if !e.c.pub.img.available || e.c.pub.img.since != first || first == 0 {
+		t.Fatalf("available: %+v", e.c.pub.img)
 	}
 	out := e.metricsText()
 	for _, s := range []string{`diradvisor_image_update_check{mode="latest"} 1`, "diradvisor_image_update_available 1",
@@ -170,8 +170,8 @@ func TestImageCheck(t *testing.T) {
 	}
 	e.dk.remoteErr = context.DeadlineExceeded
 	e.c.CheckImage(context.Background())
-	if e.c.img.success || !e.c.img.available {
-		t.Fatalf("failure keeps values: %+v", e.c.img)
+	if e.c.pub.img.success || !e.c.pub.img.available {
+		t.Fatalf("failure keeps values: %+v", e.c.pub.img)
 	}
 }
 

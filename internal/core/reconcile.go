@@ -96,6 +96,10 @@ func (c *Core) Reconcile(ctx context.Context) error {
 	if derr != nil && errorsIsTooOld(derr) {
 		return derr
 	}
+	if ctx.Err() != nil {
+		// Shutting down: not a Docker failure, nothing to update.
+		return nil
+	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -149,10 +153,15 @@ func (c *Core) Reconcile(ctx context.Context) error {
 			v.unmeas = append(v.unmeas, unmeasurable{cd.path, reasonQuotaAccess})
 			continue
 		}
-		sr, ok := statusCache[m.Point]
+		// The ZFS feature is a pool property: one check per pool, not per dataset.
+		statusKey := m.Point
+		if m.FSType == "zfs" {
+			statusKey, _, _ = strings.Cut("zfs:"+m.Source, "/")
+		}
+		sr, ok := statusCache[statusKey]
 		if !ok {
 			sr.reason, sr.err = c.fs.QuotaStatus(m)
-			statusCache[m.Point] = sr
+			statusCache[statusKey] = sr
 		}
 		if sr.err != nil {
 			c.log.Error("checking quota failed", "mountpoint", m.Point, "err", sr.err)
@@ -212,6 +221,7 @@ func (c *Core) Reconcile(ctx context.Context) error {
 	}
 	c.saveLocked()
 	c.recSeconds = c.now().Sub(start).Seconds()
+	c.publishLocked()
 	c.wakeWalker()
 	return nil
 }

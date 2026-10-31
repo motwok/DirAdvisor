@@ -5,10 +5,76 @@ package core
 import (
 	"context"
 	"strconv"
+	"sync"
+	"time"
 
 	"github.com/motwok/DirAdvisor/internal/host"
 	"github.com/motwok/DirAdvisor/internal/metrics"
 )
+
+// usageTTL is how long one quota read serves scrapes (spec MEA-3).
+const usageTTL = 2 * time.Second
+
+type usageGroup struct {
+	m     host.Mount
+	minID uint32
+}
+
+// usageCache shares one quota read between parallel scrapes and reuses it for
+// usageTTL, so a scrape storm cannot spawn one zfs process per request.
+type usageCache struct {
+	mu   sync.Mutex
+	at   time.Time
+	data map[string]map[uint32]host.Usage
+	done chan struct{} // non-nil while a read is in flight
+}
+
+// readUsage returns the quota usage per group key, from the cache when fresh.
+func (c *Core) readUsage(ctx context.Context, groups map[string]*usageGroup) map[string]map[uint32]host.Usage {
+	fresh := func() (map[string]map[uint32]host.Usage, bool) {
+		if c.usage.data == nil || c.now().Sub(c.usage.at) >= usageTTL {
+			return nil, false
+		}
+		for k := range groups {
+			if _, ok := c.usage.data[k]; !ok {
+				return nil, false
+			}
+		}
+		return c.usage.data, true
+	}
+	c.usage.mu.Lock()
+	if d, ok := fresh(); ok {
+		c.usage.mu.Unlock()
+		return d
+	}
+	if wait := c.usage.done; wait != nil {
+		c.usage.mu.Unlock()
+		<-wait
+		c.usage.mu.Lock()
+		if d, ok := fresh(); ok {
+			c.usage.mu.Unlock()
+			return d
+		}
+	}
+	done := make(chan struct{})
+	c.usage.done = done
+	c.usage.mu.Unlock()
+
+	data := map[string]map[uint32]host.Usage{}
+	for k, g := range groups {
+		u, err := c.fs.Usage(ctx, g.m, g.minID)
+		if err != nil {
+			c.log.Error("reading quotas failed", "mountpoint", g.m.Point, "err", err)
+			continue
+		}
+		data[k] = u
+	}
+	c.usage.mu.Lock()
+	c.usage.data, c.usage.at, c.usage.done = data, c.now(), nil
+	c.usage.mu.Unlock()
+	close(done)
+	return data
+}
 
 // BuildInfo describes the binary for diradvisor_build_info.
 type BuildInfo struct {
@@ -29,38 +95,26 @@ func b2f(b bool) float64 {
 
 // Collect reads the quotas and returns all metric families (spec section 11).
 func (c *Core) Collect(ctx context.Context, bi BuildInfo) []metrics.Family {
-	c.mu.Lock()
-	v := c.view
-	v.entries = append([]entryView(nil), c.view.entries...)
-	recErrors, recSeconds, reloadOK := c.recErrors, c.recSeconds, c.reloadOK
-	img := c.img
-	c.mu.Unlock()
+	c.pub.mu.Lock()
+	v := c.pub.view
+	v.entries = append([]entryView(nil), c.pub.view.entries...)
+	recErrors, recSeconds, reloadOK := c.pub.recErrors, c.pub.recSeconds, c.pub.reloadOK
+	img := c.pub.img
+	c.pub.mu.Unlock()
 
-	type group struct {
-		m     host.Mount
-		minID uint32
-	}
-	groups := map[string]*group{}
+	groups := map[string]*usageGroup{}
 	for _, e := range v.entries {
 		k := e.Mount.Point + "|" + e.Mount.Source
 		g := groups[k]
 		if g == nil {
-			g = &group{m: e.Mount, minID: e.ProjectID}
+			g = &usageGroup{m: e.Mount, minID: e.ProjectID}
 			groups[k] = g
 		}
 		if e.ProjectID < g.minID {
 			g.minID = e.ProjectID
 		}
 	}
-	usage := map[string]map[uint32]host.Usage{}
-	for k, g := range groups {
-		u, err := c.fs.Usage(ctx, g.m, g.minID)
-		if err != nil {
-			c.log.Error("reading quotas failed", "mountpoint", g.m.Point, "err", err)
-			continue
-		}
-		usage[k] = u
-	}
+	usage := c.readUsage(ctx, groups)
 
 	bytesF := m("directory_bytes", "Allocated bytes of the directory tree.", "gauge")
 	inodesF := m("directory_inodes", "Inodes of the directory tree.", "gauge")

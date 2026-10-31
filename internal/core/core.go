@@ -40,6 +40,10 @@ type Options struct {
 	Now        func() time.Time
 }
 
+// Core's mutex mu guards the state and everything Reconcile and the walker
+// work on. What the HTTP handlers read lives in pub behind its own mutex, so
+// a slow or hung reconcile (hung NFS mount, suspended ZFS pool) never blocks
+// /metrics or /-/ready.
 type Core struct {
 	mu       sync.Mutex
 	cfg      *config.Config
@@ -67,9 +71,30 @@ type Core struct {
 	ready      bool
 	recErrors  float64
 	recSeconds float64
-	reloadOK   bool
 	logged     map[string]time.Time
+
+	pub   published
+	usage usageCache
+}
+
+// published is what the HTTP handlers read; lock order is mu, then pub.mu.
+type published struct {
+	mu         sync.Mutex
+	view       view
+	recErrors  float64
+	recSeconds float64
+	reloadOK   bool
+	ready      bool
 	img        imageState
+}
+
+// publishLocked copies the reconcile results for the handlers (mu held).
+func (c *Core) publishLocked() {
+	c.pub.mu.Lock()
+	defer c.pub.mu.Unlock()
+	c.pub.view = c.view
+	c.pub.view.entries = append([]entryView(nil), c.view.entries...)
+	c.pub.recErrors, c.pub.recSeconds, c.pub.ready = c.recErrors, c.recSeconds, c.ready
 }
 
 type entryView struct {
@@ -111,24 +136,27 @@ func New(cfg *config.Config, o Options) *Core {
 	return &Core{
 		cfg: cfg, st: st, saved: saved, fs: o.FS, dk: o.Docker, storage: o.StorageDir, self: o.SelfID,
 		log: o.Log, now: o.Now, walkable: map[string]bool{}, failed: map[string]time.Time{},
-		wake: make(chan struct{}, 1), reloadOK: true, logged: map[string]time.Time{},
+		wake: make(chan struct{}, 1), logged: map[string]time.Time{},
 		dockerRoot: st.DockerRoot, rootKnown: st.DockerRoot != "" || !cfg.Docker.Enabled || o.Docker == nil,
+		pub: published{reloadOK: true},
 	}
 }
 
 // SetConfig activates a new config after a successful reload.
 func (c *Core) SetConfig(cfg *config.Config) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.cfg = cfg
-	c.reloadOK = true
+	c.mu.Unlock()
+	c.pub.mu.Lock()
+	c.pub.reloadOK = true
+	c.pub.mu.Unlock()
 }
 
 // ReloadFailed records a failed reload; the previous config stays.
 func (c *Core) ReloadFailed() {
-	c.mu.Lock()
-	c.reloadOK = false
-	c.mu.Unlock()
+	c.pub.mu.Lock()
+	c.pub.reloadOK = false
+	c.pub.mu.Unlock()
 }
 
 func (c *Core) Config() *config.Config {
@@ -138,9 +166,9 @@ func (c *Core) Config() *config.Config {
 }
 
 func (c *Core) Ready() bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.ready
+	c.pub.mu.Lock()
+	defer c.pub.mu.Unlock()
+	return c.pub.ready
 }
 
 // DockerRoot returns the DockerRootDir seen last (empty before).
@@ -167,6 +195,22 @@ func (c *Core) Save() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.saveLocked()
+}
+
+// SaveWithin saves like Save, but gives up when ctx ends before the lock is
+// free (a reconcile hung on the host filesystem must not stop the shutdown).
+func (c *Core) SaveWithin(ctx context.Context) bool {
+	for !c.mu.TryLock() {
+		select {
+		case <-ctx.Done():
+			c.log.Error("state not saved, reconcile still running")
+			return false
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	defer c.mu.Unlock()
+	c.saveLocked()
+	return true
 }
 
 func (c *Core) wakeWalker() {

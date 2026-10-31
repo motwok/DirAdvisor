@@ -205,7 +205,9 @@ func (l *Linux) QuotaStatus(m Mount) (string, error) {
 			return InstallZFSUserland, nil
 		}
 		pool, _, _ := strings.Cut(m.Source, "/")
-		out, err := runTool(l, context.Background(), bin, "get", "-Hp", "-o", "value", "feature@project_quota", pool)
+		ctx, cancel := context.WithTimeout(context.Background(), toolTimeout)
+		defer cancel()
+		out, err := runTool(l, ctx, bin, "get", "-Hp", "-o", "value", "feature@project_quota", pool)
 		if err != nil {
 			return "", err
 		}
@@ -225,7 +227,7 @@ func (l *Linux) Usage(ctx context.Context, m Mount, minID uint32) (map[uint32]Us
 		if bin == "" {
 			return nil, errors.New("zfs not found")
 		}
-		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		ctx, cancel := context.WithTimeout(ctx, toolTimeout)
 		defer cancel()
 		out, err := runTool(l, ctx, bin, "projectspace", "-Hp", "-o", "name,used,objused", m.Source)
 		if err != nil {
@@ -257,6 +259,10 @@ func (l *Linux) Usage(ctx context.Context, m Mount, minID uint32) (map[uint32]Us
 }
 
 var zfsDirs = []string{"/usr/sbin", "/sbin", "/usr/bin", "/bin", "/usr/local/sbin"}
+
+// toolTimeout bounds every zfs/zpool call (spec MEA-2); a suspended pool
+// blocks them forever otherwise.
+const toolTimeout = 10 * time.Second
 
 // zfsBinary returns the path of a ZFS tool as seen from inside the chroot.
 func (l *Linux) zfsBinary(name string) string {
@@ -290,7 +296,9 @@ func (l *Linux) ZFSVersions() (string, string) {
 	}
 	var user string
 	if bin := l.zfsBinary("zfs"); bin != "" {
-		user, _ = runTool(l, context.Background(), bin, "version")
+		ctx, cancel := context.WithTimeout(context.Background(), toolTimeout)
+		defer cancel()
+		user, _ = runTool(l, ctx, bin, "version")
 	}
 	return strings.TrimSpace(string(mod)), strings.TrimSpace(strings.Split(user, "\n")[0])
 }

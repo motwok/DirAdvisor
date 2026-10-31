@@ -132,6 +132,7 @@ func (c *Core) finishJob(j walkJob, err error) {
 				c.view.entries[i].Assigning = false
 			}
 		}
+		c.publishLocked()
 	}
 	c.saveLocked()
 }

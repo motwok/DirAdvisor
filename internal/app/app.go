@@ -112,6 +112,7 @@ type Server struct {
 	FS      host.FS
 	reload  chan chan error
 	trigger chan struct{}
+	done    chan struct{} // closed when the loop has stopped
 	cfgStat fileStamp
 }
 
@@ -183,6 +184,9 @@ func (s *Server) Handler() http.Handler {
 		res := make(chan error, 1)
 		select {
 		case s.reload <- res:
+		case <-s.done:
+			http.Error(w, "DirAdvisor is shutting down.", http.StatusServiceUnavailable)
+			return
 		case <-r.Context().Done():
 			return
 		}
@@ -211,7 +215,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 	}
 	log := NewLogger(f, stderr)
 	fsys := host.New(f.RootFS)
-	s := &Server{Flags: f, Log: log, FS: fsys, reload: make(chan chan error), trigger: make(chan struct{}, 1)}
+	s := &Server{Flags: f, Log: log, FS: fsys, reload: make(chan chan error), trigger: make(chan struct{}, 1), done: make(chan struct{})}
 	s.cfgStat = stamp(f.ConfigFile)
 	cfg, found, err := s.loadConfig()
 	if err != nil {
@@ -248,7 +252,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		log.Error("listen failed", "err", err)
 		return 1
 	}
-	srv := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second, WriteTimeout: time.Minute, IdleTimeout: 2 * time.Minute}
 	go srv.Serve(ln)
 
 	walkDone := make(chan struct{})
@@ -258,12 +262,13 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		go s.watchEvents(ctx, dc, time.Second, time.Minute)
 	}
 	code := s.loop(ctx, hup)
+	close(s.done)
 
 	stop()
 	shutdown, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 	waitDone(shutdown, walkDone)
-	s.Core.Save()
+	s.Core.SaveWithin(shutdown)
 	srv.Shutdown(shutdown)
 	log.Info("stopped")
 	return code
@@ -277,7 +282,7 @@ func waitDone(ctx context.Context, done <-chan struct{}) {
 }
 
 func (s *Server) loop(ctx context.Context, hup <-chan os.Signal) int {
-	for {
+	for ctx.Err() == nil {
 		if st := stamp(s.Flags.ConfigFile); st != s.cfgStat {
 			s.Reload()
 		}
@@ -302,6 +307,7 @@ func (s *Server) loop(ctx context.Context, hup <-chan os.Signal) int {
 			res <- s.Reload()
 		}
 	}
+	return 0
 }
 
 func (s *Server) poke() {
