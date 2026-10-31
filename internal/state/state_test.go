@@ -3,6 +3,7 @@
 package state
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -131,5 +132,45 @@ func TestSaveErrors(t *testing.T) {
 	t.Cleanup(func() { os.Chmod(ro, 0o755) })
 	if err := New().Save(ro); err == nil {
 		t.Fatal("read-only directory")
+	}
+}
+
+type failFile struct {
+	name string
+	fail string
+}
+
+func (f *failFile) Write(b []byte) (int, error) { return len(b), f.err("write") }
+func (f *failFile) Sync() error                 { return f.err("sync") }
+func (f *failFile) Close() error                { return f.err("close") }
+func (f *failFile) Name() string                { return f.name }
+
+func (f *failFile) err(step string) error {
+	if f.fail == step {
+		return errors.New(step + " failed")
+	}
+	return nil
+}
+
+func TestSaveWriteErrors(t *testing.T) {
+	dir := t.TempDir()
+	oldM, oldC := marshal, createTemp
+	t.Cleanup(func() { marshal, createTemp = oldM, oldC })
+
+	marshal = func(any, string, string) ([]byte, error) { return nil, errors.New("marshal failed") }
+	if err := New().Save(dir); err == nil {
+		t.Error("marshal")
+	}
+	marshal = oldM
+	for _, step := range []string{"write", "sync", "close"} {
+		createTemp = func(dir, _ string) (tempFile, error) {
+			return &failFile{name: filepath.Join(dir, "tmp"), fail: step}, nil
+		}
+		if err := New().Save(dir); err == nil || !strings.Contains(err.Error(), step) {
+			t.Errorf("%s: %v", step, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, FileName)); err == nil {
+		t.Fatal("state must not be written")
 	}
 }

@@ -253,3 +253,13 @@ func TestOwnerEdges(t *testing.T) {
 		t.Fatalf("tie by name: %+v", o)
 	}
 }
+
+func TestWalkerPolls(t *testing.T) {
+	old := walkerPoll
+	walkerPoll = time.Millisecond
+	t.Cleanup(func() { walkerPoll = old })
+	e := newEnv(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	e.c.RunWalker(ctx)
+}

@@ -11,6 +11,9 @@ import (
 	"github.com/motwok/DirAdvisor/internal/state"
 )
 
+// Replaced in tests.
+var walkerPoll = time.Minute
+
 var excludedTrees = []string{"/var/lib/docker", "/var/lib/containerd", "/proc", "/sys", "/dev", "/run"}
 
 type walkJob struct {
@@ -32,7 +35,7 @@ func (c *Core) RunWalker(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-c.wake:
-			case <-time.After(time.Minute):
+			case <-time.After(walkerPoll):
 			}
 			continue
 		}

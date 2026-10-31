@@ -80,7 +80,7 @@ func TestWatchEventsRetries(t *testing.T) {
 	})})
 	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 	defer cancel()
-	s.watchEvents(ctx, dc)
+	s.watchEvents(ctx, dc, time.Second, time.Minute)
 	if calls != 2 || len(s.trigger) != 1 {
 		t.Fatalf("calls %d, trigger %d", calls, len(s.trigger))
 	}
@@ -93,7 +93,7 @@ func TestWatchEventsCanceledInStream(t *testing.T) {
 	})})
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
-	s.watchEvents(ctx, dc)
+	s.watchEvents(ctx, dc, time.Second, time.Minute)
 }
 
 func TestMainDockerTooOld(t *testing.T) {
@@ -124,4 +124,27 @@ func TestMainDockerTooOld(t *testing.T) {
 	if code != 1 || !strings.Contains(errb.String(), "unsupported Docker") || !strings.Contains(errb.String(), "ZFS versions") {
 		t.Fatalf("exit %d:\n%s", code, errb.String())
 	}
+}
+
+func TestWatchEventsBackoff(t *testing.T) {
+	s := newServer(t, "")
+	calls := 0
+	dc := docker.NewWithHTTP(handlerRT{http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		// Every second stream lasts longer than the maximum and resets the backoff.
+		if calls++; calls%2 == 0 {
+			time.Sleep(5 * time.Millisecond)
+		}
+	})})
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	s.watchEvents(ctx, dc, time.Millisecond, 3*time.Millisecond)
+	if calls < 4 {
+		t.Fatalf("calls %d", calls)
+	}
+}
+
+func TestWaitDoneTimeout(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	waitDone(ctx, nil)
 }

@@ -393,3 +393,18 @@ func TestSelfContainerID(t *testing.T) {
 		t.Fatal("empty")
 	}
 }
+
+// /dev/shm is a separate tmpfs below /dev on usual hosts.
+func TestLinuxWalkStaysOnFilesystem(t *testing.T) {
+	var dev, shm syscall.Stat_t
+	if syscall.Lstat("/dev", &dev) != nil || syscall.Lstat("/dev/shm", &shm) != nil || dev.Dev == shm.Dev {
+		t.Skip("no separate /dev/shm")
+	}
+	fx := useFakeXattr(t)
+	if err := New("/").Walk(context.Background(), "/dev", 7, true, nil, 0); err != nil {
+		t.Skipf("/dev not walkable here: %v", err)
+	}
+	if _, ok := fx.attrs["/dev/shm"]; ok {
+		t.Fatal("other filesystem entered")
+	}
+}
