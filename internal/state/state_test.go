@@ -97,6 +97,14 @@ func TestNullEntries(t *testing.T) {
 	if s, err := Load(dir); err != nil || s.Entries == nil {
 		t.Fatalf("null entries: %v %v", s, err)
 	}
+	data := `{"schema_version": 1, "entries": {"config:/a": null, "config:/b": {"source": "config", "path": "/b", "project_id": 7}}}`
+	if err := os.WriteFile(filepath.Join(dir, FileName), []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Load(dir)
+	if err != nil || len(s.Entries) != 1 || s.Entries["config:/b"].ProjectID != 7 {
+		t.Fatalf("null entry: %v %v", s, err)
+	}
 }
 
 func TestCorruptNotMovable(t *testing.T) {
