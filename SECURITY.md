@@ -64,6 +64,10 @@ DirAdvisor deliberately does things that can look alarming but are by design:
   on directories it measures,
 - `/metrics` exposes **paths, volume, container and stack names**. Do not publish its port to untrusted
   networks.
+- the measurement **trusts the project ID on each file**. Root inside a container may change the project
+  ID of files it owns (`chattr -p`), so a tenant can under-report its own volume or charge files to
+  another volume's ID; DirAdvisor re-checks only the top directory. Where tenants are not trusted, run
+  the daemon with `userns-remap`, which makes the kernel refuse such changes.
 
 These documented behaviors are **not** vulnerabilities on their own. Genuine security issues include, for
 example: changing file contents, owners or permissions on the host; any write or control call against the

@@ -119,6 +119,12 @@ func TestRelevant(t *testing.T) {
 			t.Errorf("%v should not be relevant", e)
 		}
 	}
+	if (Container{ID: "x", Names: []string{"/api/db", "/db"}}).Name() != "db" {
+		t.Fatal("link alias must not be the name")
+	}
+	if (Container{ID: "x", Names: []string{"/api/db"}}).Name() != "api/db" {
+		t.Fatal("only aliases: first name")
+	}
 	if (Container{ID: "x"}).Name() != "x" {
 		t.Fatal("name fallback")
 	}
@@ -162,7 +168,11 @@ func TestErrors(t *testing.T) {
 	if _, err := e.Info(ctx); err == nil || err.(*APIError).Message != "plain failure" {
 		t.Errorf("plain error: %v", err)
 	}
-	if _, reached, err := e.CheckVersion(ctx); err == nil || !reached {
+	if v, reached, err := e.CheckVersion(ctx); err == nil || !reached || v != "" || err.(*APIError).Status != 500 {
+		t.Errorf("version: status 500: %v", err)
+	}
+	bad := NewWithHTTP(rt{http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { io.WriteString(w, "{") })})
+	if _, reached, err := bad.CheckVersion(ctx); err == nil || !reached {
 		t.Errorf("version: bad body: %v", err)
 	}
 	if err := e.Events(ctx, nil); err == nil || err.(*APIError).Status != 500 {

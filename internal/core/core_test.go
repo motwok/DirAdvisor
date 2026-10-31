@@ -314,13 +314,8 @@ func TestDuplicatePaths(t *testing.T) {
 	if got == nil || got.Source != "volume" || got.Volume != "a" || got.ProjectID != cfgID {
 		t.Fatalf("winner: %+v", got)
 	}
-	n := 0
-	for _, u := range e.c.view.unmeas {
-		if u.Reason == reasonDuplicatePath {
-			n++
-		}
-	}
-	if n != 2 {
+	// Both losers share the path, so one series says duplicate_path (ADM-1).
+	if len(e.c.view.unmeas) != 1 || e.c.view.unmeas[0] != (unmeasurable{"/srv/shared", reasonDuplicatePath}) {
 		t.Fatalf("losers: %+v", e.c.view.unmeas)
 	}
 }

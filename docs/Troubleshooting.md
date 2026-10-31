@@ -29,6 +29,10 @@ Bind mounts are never discovered; add them under `directories`.
 is after compression, and blocks kept only by snapshots are not counted. Sockets, FIFOs and device
 files that existed before the walk keep their old project ID; only their inode count is affected.
 
+**The log says `walk failed ... invalid argument` on XFS.** An XFS v4 filesystem without the
+`projid32bit` feature accepts project IDs up to 65535 only; the default range starts at 100000. Set
+`global.project_ids` below 65536 for such hosts, or migrate the filesystem to XFS v5.
+
 **An outer directory counts less than expected.** Directories inside it that are measured on their own
 (another entry, a volume) are counted there, not in the outer one; see `diradvisor_directory_overlap`.
 

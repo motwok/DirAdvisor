@@ -156,13 +156,25 @@ var (
 	reCgroupID    = regexp.MustCompile(`(?:docker-|/docker/)([0-9a-f]{64})`)
 )
 
-// ContainerIDFrom finds the own container ID in mountinfo or cgroup content.
+// ContainerIDFrom finds the own container ID in cgroup or mountinfo content.
+// In mountinfo only the root field of the own /etc/hostname, /etc/hosts and
+// /etc/resolv.conf binds counts: with the host root mounted rslave, mounts of
+// other containers (shm, secrets) show up too and may come first.
 func ContainerIDFrom(mountinfo, cgroup string) string {
-	if m := reMountinfoID.FindStringSubmatch(mountinfo); m != nil {
-		return m[1]
-	}
 	if m := reCgroupID.FindStringSubmatch(cgroup); m != nil {
 		return m[1]
+	}
+	for _, line := range strings.Split(mountinfo, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 5 {
+			continue
+		}
+		switch f[4] {
+		case "/etc/hostname", "/etc/hosts", "/etc/resolv.conf":
+			if m := reMountinfoID.FindStringSubmatch(f[3]); m != nil {
+				return m[1]
+			}
+		}
 	}
 	return ""
 }

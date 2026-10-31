@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -211,12 +212,16 @@ func (c *Core) Reconcile(ctx context.Context) error {
 	}
 
 	sort.Slice(v.entries, func(i, j int) bool { return v.entries[i].Path < v.entries[j].Path })
-	sort.Slice(v.unmeas, func(i, j int) bool { return v.unmeas[i].Path < v.unmeas[j].Path })
+	sort.Slice(v.unmeas, func(i, j int) bool {
+		a, b := v.unmeas[i], v.unmeas[j]
+		return a.Path < b.Path || a.Path == b.Path && a.Reason < b.Reason
+	})
+	v.unmeas = slices.Compact(v.unmeas)
 	v.overlap = overlaps(v.entries)
 	c.setResetTargets(v.entries)
 	c.view = v
 	c.logActions(cfg, now)
-	if snap.ok || !cfg.Docker.Enabled {
+	if snap.ok || !cfg.Docker.Enabled || c.dk == nil {
 		c.ready = true
 	}
 	c.saveLocked()

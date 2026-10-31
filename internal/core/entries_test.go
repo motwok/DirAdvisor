@@ -4,6 +4,7 @@ package core
 
 import (
 	"testing"
+	"time"
 
 	"github.com/motwok/DirAdvisor/internal/config"
 	"github.com/motwok/DirAdvisor/internal/state"
@@ -100,6 +101,26 @@ func TestDockerRootUnknownAtStart(t *testing.T) {
 	e.reconcile()
 	if j, ok := e.c.nextJob(); !ok || !j.skip["/data/docker"] {
 		t.Fatalf("job after restart %+v %v", j, ok)
+	}
+}
+
+// Two globs with the same missing prefix give one unmeasurable series.
+func TestUnmeasurableSeriesUnique(t *testing.T) {
+	e := newEnv(t)
+	e.cfg.Directories = []config.Directory{{Path: "/data/*/a"}, {Path: "/data/*/b"}}
+	e.reconcile()
+	if len(e.c.view.unmeas) != 1 || e.c.view.unmeas[0] != (unmeasurable{"/data", reasonPathMissing}) {
+		t.Fatalf("unmeas %+v", e.c.view.unmeas)
+	}
+}
+
+// Without a Docker client (--docker.socket="") the default config is still ready.
+func TestReadyWithoutDockerClient(t *testing.T) {
+	e := newEnv(t)
+	e.c = New(e.cfg, Options{FS: e.fs, StorageDir: e.dir, Log: e.c.log, Now: func() time.Time { return e.now }})
+	e.reconcile()
+	if !e.c.Ready() {
+		t.Fatal("not ready")
 	}
 }
 
