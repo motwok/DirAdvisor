@@ -20,11 +20,13 @@ func isOwnLabel(n string) bool {
 	return false
 }
 
-// volumeLabels resolves the additional labels of a volume (spec LBL-2).
+// volumeLabels resolves the additional labels of a volume (spec LBL-2). Names
+// from Docker labels are only sanitized, so a name that is still invalid
+// (starts with a digit or "__", or is empty) is dropped here (LBL-3).
 func volumeLabels(cfg *config.Config, vol docker.Volume, path string, o ownership, prev map[string]string) map[string]string {
 	out := map[string]string{}
 	set := func(k, v string) {
-		if v != "" && !isOwnLabel(k) {
+		if v != "" && !isOwnLabel(k) && config.ValidLabelName(k) {
 			out[k] = v
 		}
 	}

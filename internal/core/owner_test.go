@@ -102,6 +102,10 @@ func TestLabels(t *testing.T) {
 	c.Labels["x"] = "y"
 	c.Labels["diradvisor.label.team"] = "ctr"
 	c.Labels["diradvisor.label.site-a"] = "home"
+	// Invalid after sanitizing: dropped, never written (would break the scrape).
+	c.Labels["diradvisor.label.1st"] = "x"
+	c.Labels["diradvisor.label."] = "x"
+	vol.Labels["diradvisor.label.__x"] = "x"
 	o := ownership{Owner: "app-web-1", Stack: "app", OwnerC: &c}
 	l := volumeLabels(cfg, vol, volPath, o, nil)
 	want := map[string]string{

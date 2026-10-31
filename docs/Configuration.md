@@ -109,8 +109,9 @@ Additional labels on Docker volumes, highest priority first:
    wins), set in the compose file by the stack author;
 3. the allowlists `container_labels` and `volume_labels`.
 
-Names from Docker labels get every character outside `[a-zA-Z0-9_]` replaced by `_`. Label values that
-are empty are left out. Every additional label adds series, so keep the allowlists short.
+Names from Docker labels get every character outside `[a-zA-Z0-9_]` replaced by `_`; a name that is
+still no valid Prometheus label name (empty, starting with a digit or with `__`) is dropped. Label values
+that are empty are left out. Every additional label adds series, so keep the allowlists short.
 
 ### Ownership
 
