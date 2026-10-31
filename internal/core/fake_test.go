@@ -37,6 +37,11 @@ type fakeFS struct {
 	usageErr error
 	walks    []walkCall
 	walkErr  error
+	onWalk   func()
+	mountErr map[string]error
+	quotaErr error
+	listErr  error
+	idErr    map[string]error
 }
 
 func newFS() *fakeFS {
@@ -65,6 +70,9 @@ func (f *fakeFS) Stat(p string) (bool, bool) {
 func (f *fakeFS) ListDirs(p string) ([]string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
 	var out []string
 	for d := range f.dirs {
 		if d != "/" && path.Dir(d) == p {
@@ -76,6 +84,9 @@ func (f *fakeFS) ListDirs(p string) ([]string, error) {
 }
 
 func (f *fakeFS) MountOf(p string) (host.Mount, error) {
+	if err := f.mountErr[p]; err != nil {
+		return host.Mount{}, err
+	}
 	best := ""
 	for mp := range f.mounts {
 		if (mp == "/" || p == mp || strings.HasPrefix(p, mp+"/")) && len(mp) > len(best) {
@@ -91,10 +102,13 @@ func (f *fakeFS) ProjectID(p string) (uint32, error) {
 	if !f.dirs[p] {
 		return 0, errors.New("missing")
 	}
+	if err := f.idErr[p]; err != nil {
+		return 0, err
+	}
 	return f.projid[p], nil
 }
 
-func (f *fakeFS) QuotaStatus(m host.Mount) (string, error) { return f.status[m.Point], nil }
+func (f *fakeFS) QuotaStatus(m host.Mount) (string, error) { return f.status[m.Point], f.quotaErr }
 func (f *fakeFS) ZFSVersions() (string, string)            { return "", "" }
 
 func (f *fakeFS) Usage(_ context.Context, _ host.Mount, minID uint32) (map[uint32]host.Usage, error) {
@@ -116,6 +130,9 @@ func (f *fakeFS) Walk(_ context.Context, root string, id uint32, inherit bool, s
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.walks = append(f.walks, walkCall{root, id, inherit, skip})
+	if f.onWalk != nil {
+		f.onWalk()
+	}
 	if f.walkErr != nil {
 		return f.walkErr
 	}
@@ -133,6 +150,10 @@ type fakeDocker struct {
 	digests    []string
 	remote     string
 	remoteErr  error
+	versionErr error
+	infoErr    error
+	volErr     error
+	ctrErr     error
 }
 
 var errDown = errors.New("down")
@@ -140,6 +161,9 @@ var errDown = errors.New("down")
 func (d *fakeDocker) CheckVersion(context.Context) (string, bool, error) {
 	if d.down {
 		return "", false, errDown
+	}
+	if d.versionErr != nil {
+		return "", true, d.versionErr
 	}
 	if docker.CompareVersion(d.api, docker.MinAPIVersion) < 0 {
 		return d.api, true, errors.New("too old")
@@ -150,17 +174,26 @@ func (d *fakeDocker) Info(context.Context) (docker.Info, error) {
 	if d.down {
 		return docker.Info{}, errDown
 	}
+	if d.infoErr != nil {
+		return docker.Info{}, d.infoErr
+	}
 	return docker.Info{DockerRootDir: d.root}, nil
 }
 func (d *fakeDocker) Volumes(context.Context) ([]docker.Volume, error) {
 	if d.down {
 		return nil, errDown
 	}
+	if d.volErr != nil {
+		return nil, d.volErr
+	}
 	return d.volumes, nil
 }
 func (d *fakeDocker) Containers(context.Context) ([]docker.Container, error) {
 	if d.down {
 		return nil, errDown
+	}
+	if d.ctrErr != nil {
+		return nil, d.ctrErr
 	}
 	return d.containers, nil
 }

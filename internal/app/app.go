@@ -246,21 +246,25 @@ func Main(args []string, stdout, stderr io.Writer) int {
 	go func() { s.Core.RunWalker(ctx); close(walkDone) }()
 	go s.Core.RunImageCheck(ctx)
 	if dc != nil {
-		go s.watchEvents(ctx, dc)
+		go s.watchEvents(ctx, dc, time.Second, time.Minute)
 	}
 	code := s.loop(ctx, hup)
 
 	stop()
 	shutdown, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	select {
-	case <-walkDone:
-	case <-shutdown.Done():
-	}
+	waitDone(shutdown, walkDone)
 	s.Core.Save()
 	srv.Shutdown(shutdown)
 	log.Info("stopped")
 	return code
+}
+
+func waitDone(ctx context.Context, done <-chan struct{}) {
+	select {
+	case <-done:
+	case <-ctx.Done():
+	}
 }
 
 func (s *Server) loop(ctx context.Context, hup <-chan os.Signal) int {
@@ -268,12 +272,10 @@ func (s *Server) loop(ctx context.Context, hup <-chan os.Signal) int {
 		if st := stamp(s.Flags.ConfigFile); st != s.cfgStat {
 			s.Reload()
 		}
+		// Reconcile only fails for a too old Docker; other errors are counted.
 		if err := s.Core.Reconcile(ctx); err != nil {
-			if errors.Is(err, core.ErrDockerTooOld) {
-				s.Log.Error("unsupported Docker", "err", err)
-				return 1
-			}
-			s.Log.Error("reconcile failed", "err", err)
+			s.Log.Error("unsupported Docker", "err", err)
+			return 1
 		}
 		timer := time.NewTimer(s.Core.Config().Global.ReconcileInterval.D())
 		select {
@@ -301,8 +303,8 @@ func (s *Server) poke() {
 }
 
 // watchEvents triggers a reconcile on relevant Docker events (spec DIS-10/11).
-func (s *Server) watchEvents(ctx context.Context, dc *docker.Client) {
-	backoff := time.Second
+func (s *Server) watchEvents(ctx context.Context, dc *docker.Client, minRetry, maxRetry time.Duration) {
+	backoff := minRetry
 	for ctx.Err() == nil {
 		start := time.Now()
 		err := dc.Events(ctx, func(e docker.Event) {
@@ -313,8 +315,8 @@ func (s *Server) watchEvents(ctx context.Context, dc *docker.Client) {
 		if ctx.Err() != nil {
 			return
 		}
-		if time.Since(start) > time.Minute {
-			backoff = time.Second
+		if time.Since(start) > maxRetry {
+			backoff = minRetry
 		}
 		s.Log.Debug("Docker event stream lost", "err", err, "retry_in", backoff)
 		select {
@@ -322,8 +324,8 @@ func (s *Server) watchEvents(ctx context.Context, dc *docker.Client) {
 			return
 		case <-time.After(backoff):
 		}
-		if backoff *= 2; backoff > time.Minute {
-			backoff = time.Minute
+		if backoff *= 2; backoff > maxRetry {
+			backoff = maxRetry
 		}
 	}
 }

@@ -91,16 +91,29 @@ func migrate(s *State) {
 	s.SchemaVersion = SchemaVersion
 }
 
+// Replaced in tests.
+var (
+	marshal    = json.MarshalIndent
+	createTemp = func(dir, pattern string) (tempFile, error) { return os.CreateTemp(dir, pattern) }
+)
+
+type tempFile interface {
+	Write(b []byte) (int, error)
+	Sync() error
+	Close() error
+	Name() string
+}
+
 // Save writes the state atomically.
 func (s *State) Save(dir string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(s, "", "  ")
+	data, err := marshal(s, "", "  ")
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, FileName+".tmp-*")
+	tmp, err := createTemp(dir, FileName+".tmp-*")
 	if err != nil {
 		return err
 	}
