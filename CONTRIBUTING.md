@@ -27,6 +27,7 @@ directories on the host, so every change is reviewed carefully before it is merg
 - Do not put raw non-ASCII characters into source code; write them as escape sequences (`\uXXXX`).
 - Diagrams in Markdown are Mermaid, not ASCII art.
 - The build, including the smoke test, must be green.
+- Test coverage (unit and integration combined) must stay at 99% or more; add tests with new code.
 
 By submitting a pull request you agree that your contribution is licensed under the
 **GNU AGPL v3** (see [LICENSE](LICENSE)).
