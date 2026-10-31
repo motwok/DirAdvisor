@@ -58,6 +58,7 @@ All metrics have the prefix `diradvisor_`; all are gauges except `reconcile_erro
 | `duplicate_path` | path already measured by another entry | see [Troubleshooting.md](Troubleshooting.md#duplicate_path) |
 | `excluded_path` | bind volume pointing into an excluded tree | not measurable |
 | `project_ids_exhausted` | no free ID in `project_ids` | widen the range |
+| `quota_access_failed` | the quota state or usage of the filesystem could not be read | see [Troubleshooting.md](Troubleshooting.md#quota_access_failed) |
 
 ## DirAdvisor itself
 

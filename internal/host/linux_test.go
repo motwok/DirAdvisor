@@ -148,29 +148,57 @@ func TestLinuxProjectIDFake(t *testing.T) {
 	}
 }
 
+func useKernel(t *testing.T, release string) {
+	old := kernelRelease
+	kernelRelease = func() string { return release }
+	t.Cleanup(func() { kernelRelease = old })
+}
+
+func TestKernelBefore(t *testing.T) {
+	if kernelBefore(5, 14) {
+		t.Fatal("this kernel runs quotactl_fd")
+	}
+	for release, old := range map[string]bool{"5.13.19-x": true, "5.14.0": false, "4.19": true, "6.12.1-amd64": false, "weird": false, "": false} {
+		useKernel(t, release)
+		if kernelBefore(5, 14) != old {
+			t.Errorf("%q: before 5.14 = %v", release, !old)
+		}
+	}
+}
+
 func TestLinuxQuotaStatus(t *testing.T) {
 	root := t.TempDir()
 	l := New(root).(*Linux)
 	var qerr error
 	useQuotactl(t, func(uint32, *nextdqblk) error { return qerr })
 	cases := []struct {
-		fs   string
-		err  error
-		want string
+		fs     string
+		kernel string
+		err    error
+		want   string
 	}{
-		{"ext4", nil, ""},
-		{"xfs", syscall.ENOENT, ""},
-		{"ext4", syscall.ENOSYS, UpgradeKernel},
-		{"ext4", syscall.ESRCH, EnableProjectQuotaFeature},
-		{"xfs", syscall.ESRCH, MountWithPrjquota},
-		{"nfs4", nil, RemoteFilesystem},
-		{"btrfs", nil, FilesystemNotSupported},
+		{"ext4", "6.12", nil, ""},
+		{"xfs", "6.12", syscall.ENOENT, ""},
+		{"ext4", "5.10.0", syscall.ENOSYS, UpgradeKernel},
+		{"xfs", "5.10.0", syscall.ENOSYS, UpgradeKernel},
+		{"xfs", "6.12", syscall.ENOSYS, MountWithPrjquota},
+		{"ext4", "6.12", syscall.ESRCH, EnableProjectQuotaFeature},
+		{"xfs", "6.12", syscall.ESRCH, MountWithPrjquota},
+		{"nfs4", "6.12", nil, RemoteFilesystem},
+		{"btrfs", "6.12", nil, FilesystemNotSupported},
 	}
 	for _, c := range cases {
 		qerr = c.err
+		useKernel(t, c.kernel)
 		if got, err := l.QuotaStatus(Mount{Point: "/", FSType: c.fs}); err != nil || got != c.want {
-			t.Errorf("%s %v: %q %v", c.fs, c.err, got, err)
+			t.Errorf("%s %s %v: %q %v", c.fs, c.kernel, c.err, got, err)
 		}
+	}
+	// ext4 always has the quota hooks: ENOSYS on a new kernel is a blocked syscall.
+	useKernel(t, "6.12")
+	qerr = syscall.ENOSYS
+	if _, err := l.QuotaStatus(Mount{Point: "/", FSType: "ext4"}); !errors.Is(err, syscall.ENOSYS) {
+		t.Fatalf("ENOSYS on ext4: %v", err)
 	}
 	qerr = syscall.EIO
 	if _, err := l.QuotaStatus(Mount{Point: "/", FSType: "ext4"}); !errors.Is(err, syscall.EIO) {

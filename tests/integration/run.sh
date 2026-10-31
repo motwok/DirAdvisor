@@ -66,6 +66,7 @@ step "filesystems"
 loop() { truncate -s "$2" "$WORK/$1.img"; losetup -f --show "$WORK/$1.img"; }
 EXT=$(loop ext4 400M); mkfs.ext4 -q -O project,quota "$EXT"; mkdir -p /mnt/it-ext4; mount "$EXT" /mnt/it-ext4
 XFS=$(loop xfs 512M); mkfs.xfs -q "$XFS"; mkdir -p /mnt/it-xfs; mount -o prjquota "$XFS" /mnt/it-xfs
+XNQ=$(loop xfsnoq 320M); mkfs.xfs -q "$XNQ"; mkdir -p /mnt/it-xfsnoq; mount "$XNQ" /mnt/it-xfsnoq
 NOQ=$(loop noq 100M); mkfs.ext4 -q "$NOQ"; mkdir -p /mnt/it-noq; mount "$NOQ" /mnt/it-noq
 modprobe zfs || { apt-get install -y -q "linux-modules-extra-$(uname -r)" && modprobe zfs; }
 truncate -s 400M "$WORK/zfs.img"
@@ -79,7 +80,7 @@ for fs in ext4 xfs zfs noq; do
   docker run -d --name "w_$fs" --label com.docker.compose.project=itstack -v "vol_$fs":/data alpine sleep 3600 >/dev/null
   dd if=/dev/urandom of="/mnt/it-$fs/vol/before" bs=1M count=5 status=none
 done
-mkdir -p /mnt/it-ext4/conf /mnt/it-xfs/home/alice /mnt/it-xfs/home/bob /mnt/it-ext4/big /mnt/it-noq/dir
+mkdir -p /mnt/it-ext4/conf /mnt/it-xfs/home/alice /mnt/it-xfs/home/bob /mnt/it-ext4/big /mnt/it-noq/dir /mnt/it-xfsnoq/dir
 dd if=/dev/urandom of=/mnt/it-ext4/conf/f bs=1M count=2 status=none
 dd if=/dev/urandom of=/mnt/it-xfs/home/alice/f bs=1M count=3 status=none
 for i in $(seq 2000); do echo "$i" > "/mnt/it-ext4/big/f$i"; done
@@ -97,6 +98,7 @@ directories:
   - path: /mnt/it-xfs/home/*
     labels: { user: "\$1" }
   - path: /mnt/it-noq/dir
+  - path: /mnt/it-xfsnoq/dir
 $CONF
 $BIG
 EOF
@@ -124,10 +126,12 @@ metrics | grep -q 'diradvisor_directory_info{owner="tester",path="/mnt/it-ext4/c
 step "admin action and overlap"
 metrics | grep -q 'diradvisor_admin_action_needed{action="enable_project_quota_feature",fstype="ext4",mountpoint="/mnt/it-noq"} 1' || fail "admin action"
 metrics | grep -q 'diradvisor_directory_unmeasurable{path="/mnt/it-noq/vol",reason="enable_project_quota_feature"} 1' || fail "unmeasurable"
+metrics | grep -q 'diradvisor_admin_action_needed{action="mount_with_prjquota",fstype="xfs",mountpoint="/mnt/it-xfsnoq"} 1' || fail "xfs admin action"
 metrics | grep -q 'diradvisor_directory_overlap{inner="/mnt/it-ext4/conf",path="/mnt/it-ext4"} 1' || fail "overlap"
 LOG=$(docker logs diradvisor 2>&1)
 grep -q 'tune2fs -O project,quota' <<<"$LOG" || fail "admin action log"
 grep -q 'systemctl stop docker' <<<"$LOG" || fail "admin action log: stop Docker"
+grep -q 'add prjquota to the options of /mnt/it-xfsnoq' <<<"$LOG" || fail "admin action log: prjquota"
 
 step "walk boundaries"
 OUTER=$(project_id /mnt/it-ext4)

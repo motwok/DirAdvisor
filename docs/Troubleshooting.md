@@ -12,7 +12,7 @@ Start with `docker logs diradvisor` and the series `diradvisor_admin_action_need
 | exits with code 1, log `unsupported Docker` | Docker API older than 1.41 | update Docker |
 | exits with code 2 | unknown flag or value | check the command line |
 | `/-/ready` stays 503, `reconcile_errors_total` grows | Docker socket not reachable | mount `/var/run/docker.sock`; configured directories are measured anyway |
-| log `quotactl_fd ... operation not permitted` | capabilities or seccomp | add `SYS_ADMIN`; if that is not enough, try `privileged: true` |
+| `directory_unmeasurable{reason="quota_access_failed"}`, log `quotactl_fd ... operation not permitted` | capabilities or seccomp | add `SYS_ADMIN`; if that is not enough, try `privileged: true` |
 | `listen failed` | port in use (cAdvisor also uses 8080) | map another host port or set `--web.listen-address` |
 
 ## Values look wrong
@@ -74,6 +74,13 @@ If the directory is gone for good, remove it from the config.
 ### `project_ids_exhausted`
 
 All IDs in `global.project_ids` are in use. Widen the range; IDs already assigned stay valid.
+
+### `quota_access_failed`
+
+DirAdvisor could not find the mount of the directory or could not read the quota state or usage of its
+filesystem. The log line next to it has the error: `operation not permitted` means a missing capability
+or a seccomp profile without `quotactl_fd` (add `SYS_ADMIN`, or `privileged: true`); on ZFS check that
+`/dev/zfs` is passed to the container and that `zpool`/`zfs` work on the host.
 
 ## Docker volume removed, state lost
 

@@ -24,6 +24,7 @@ const (
 	reasonExcludedPath    = "excluded_path"
 	reasonDuplicatePath   = "duplicate_path"
 	reasonUnsupportedDrv  = "unsupported_volume_driver"
+	reasonQuotaAccess     = "quota_access_failed"
 	defaultDockerRoot     = "/var/lib/docker"
 	retryFailedWalksAfter = 10 * time.Minute
 )
@@ -135,6 +136,7 @@ func (c *Core) Reconcile(ctx context.Context) error {
 		m, err := c.fs.MountOf(cd.path)
 		if err != nil {
 			c.log.Error("finding mount failed", "path", cd.path, "err", err)
+			v.unmeas = append(v.unmeas, unmeasurable{cd.path, reasonQuotaAccess})
 			continue
 		}
 		sr, ok := statusCache[m.Point]
@@ -144,6 +146,7 @@ func (c *Core) Reconcile(ctx context.Context) error {
 		}
 		if sr.err != nil {
 			c.log.Error("checking quota failed", "mountpoint", m.Point, "err", sr.err)
+			v.unmeas = append(v.unmeas, unmeasurable{cd.path, reasonQuotaAccess})
 			continue
 		}
 		if sr.reason != "" {
@@ -455,7 +458,10 @@ func (c *Core) ensureID(cd *candidate, m host.Mount, r config.IDRange) (*state.E
 	case top != 0 && !inRange(top) && !c.st.HoldsID(top, cd.key):
 		return nil, reasonForeignID
 	default:
-		id = c.allocate(m, r)
+		var err error
+		if id, err = c.allocate(m, r); err != nil {
+			return nil, reasonQuotaAccess
+		}
 		if id == 0 {
 			return nil, reasonExhausted
 		}
@@ -474,12 +480,12 @@ func (c *Core) fillEntry(e *state.Entry, cd *candidate) {
 }
 
 // allocate returns the lowest free ID of the range, or 0 (spec PID-2).
-func (c *Core) allocate(m host.Mount, r config.IDRange) uint32 {
+func (c *Core) allocate(m host.Mount, r config.IDRange) (uint32, error) {
 	used := c.st.UsedIDs()
 	usage, err := c.fs.Usage(context.Background(), m, uint32(r.From))
 	if err != nil {
 		c.log.Error("reading quotas failed", "mountpoint", m.Point, "err", err)
-		return 0
+		return 0, err
 	}
 	for id := r.From; id <= r.To; id++ {
 		u := uint32(id)
@@ -489,9 +495,9 @@ func (c *Core) allocate(m host.Mount, r config.IDRange) uint32 {
 		if q, ok := usage[u]; ok && (q.Bytes > 0 || q.Inodes > 0) {
 			continue
 		}
-		return u
+		return u, nil
 	}
-	return 0
+	return 0, nil
 }
 
 func under(p, dir string) bool {
