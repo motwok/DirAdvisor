@@ -65,7 +65,7 @@ directories:
 - Unknown keys are an error.
 - An invalid file at start: DirAdvisor exits with code 1.
 - The file is re-read when it changes (checked every reconcile), on `SIGHUP` and on `POST /-/reload`.
-  An invalid file then keeps the previous config and sets `diradvisor_config_last_reload_successful` to
+  An invalid, missing or empty file then keeps the previous config and sets `diradvisor_config_last_reload_successful` to
   0; the log says why.
 
 ### Environment variables

@@ -134,10 +134,19 @@ func (s *Server) loadConfig() (*config.Config, bool, error) {
 	return config.Load(s.Flags.ConfigFile, os.LookupEnv, stat)
 }
 
-// Reload loads the config file and activates it if valid (spec CFG-4/5).
+// Reload loads the config file and activates it if valid (spec CFG-4/5). A
+// missing or empty file counts as invalid here: the defaults would release
+// every configured directory, and a file in the middle of a save looks the same.
 func (s *Server) Reload() error {
 	s.cfgStat = stamp(s.Flags.ConfigFile)
-	cfg, _, err := s.loadConfig()
+	cfg, found, err := s.loadConfig()
+	switch {
+	case err != nil:
+	case !found:
+		err = errors.New("config file is missing")
+	case s.cfgStat.size == 0:
+		err = errors.New("config file is empty")
+	}
 	if err != nil {
 		s.Core.ReloadFailed()
 		s.Log.Error("config reload failed", "file", s.Flags.ConfigFile, "err", err)

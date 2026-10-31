@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/motwok/DirAdvisor/internal/config"
 	"github.com/motwok/DirAdvisor/internal/core"
@@ -114,6 +115,41 @@ func TestHandler(t *testing.T) {
 	if !strings.Contains(body, "diradvisor_config_last_reload_successful 0") {
 		t.Fatal("reload failure not visible")
 	}
+}
+
+// A missing or empty file at reload keeps the previous config (CFG-5).
+func TestReloadMissingOrEmptyFile(t *testing.T) {
+	s := newServer(t, "global: { reconcile_interval: 5s }\ndirectories: [ { path: /srv } ]")
+	if err := s.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	check := func(what string) {
+		t.Helper()
+		if err := s.Reload(); err == nil {
+			t.Fatalf("%s: expected an error", what)
+		}
+		cfg := s.Core.Config()
+		if cfg.Global.ReconcileInterval.D() != 5*time.Second || len(cfg.Directories) != 1 {
+			t.Fatalf("%s: config replaced: %+v", what, cfg)
+		}
+		if !strings.Contains(metricsOf(t, s), "diradvisor_config_last_reload_successful 0") {
+			t.Fatalf("%s: metric", what)
+		}
+	}
+	os.Remove(s.Flags.ConfigFile)
+	check("missing")
+	os.WriteFile(s.Flags.ConfigFile, nil, 0o644)
+	check("empty")
+	os.WriteFile(s.Flags.ConfigFile, []byte("global: { reconcile_interval: 7s }"), 0o644)
+	if err := s.Reload(); err != nil || s.Core.Config().Global.ReconcileInterval.D() != 7*time.Second {
+		t.Fatalf("valid again: %v", err)
+	}
+}
+
+func metricsOf(t *testing.T, s *Server) string {
+	t.Helper()
+	_, body := get(t, s.Handler(), "GET", "/metrics")
+	return body
 }
 
 func TestMainExitCodes(t *testing.T) {
