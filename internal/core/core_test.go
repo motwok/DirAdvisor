@@ -46,7 +46,6 @@ func TestNewVolumeGetsIDAndWalk(t *testing.T) {
 		`hatchlens_directory_assigning{path="` + volPath + `"} 0`,
 		`hatchlens_build_info{goversion="go1.27",revision="abc",version="1.2.3"} 1`,
 		`hatchlens_image_update_check{mode="disabled"} 1`,
-		`hatchlens_config_last_reload_successful 1`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in\n%s", want, out)
@@ -381,15 +380,9 @@ func TestRunWalkerAndImageLoop(t *testing.T) {
 	e.c.RunImageCheck(ctx2)
 }
 
-func TestSaveAndReload(t *testing.T) {
+func TestSave(t *testing.T) {
 	e := newEnv(t)
-	e.c.ReloadFailed()
-	if !strings.Contains(e.metricsText(), "hatchlens_config_last_reload_successful 0") {
-		t.Fatal("reload failure not reported")
-	}
-	cfg := config.Default()
-	e.c.SetConfig(cfg)
-	if e.c.Config() != cfg || e.c.DockerRoot() != "" {
+	if e.c.Config() == nil || e.c.DockerRoot() != "" {
 		t.Fatal("config")
 	}
 	e.c.Save()

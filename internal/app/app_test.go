@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/motwok/HatchLens/internal/config"
 	"github.com/motwok/HatchLens/internal/core"
@@ -21,16 +20,13 @@ import (
 )
 
 func TestParseFlags(t *testing.T) {
-	f, err := ParseFlags(nil, io.Discard)
-	if err != nil || f.ConfigFile != "/etc/hatchlens/config.yml" || f.StoragePath != "/var/lib/hatchlens" ||
-		f.RootFS != "/" || f.Listen != ":8080" || f.LogLevel != "info" || f.LogFormat != "logfmt" {
-		t.Fatalf("defaults: %+v %v", f, err)
+	if p, err := ParseFlags(nil, io.Discard); err != nil || p != "" {
+		t.Fatalf("none: %q %v", p, err)
 	}
-	f, err = ParseFlags([]string{"--config.file=/data/c.yml", "--path.rootfs=/host", "--log.format=json", "--log.level=debug"}, io.Discard)
-	if err != nil || f.ConfigFile != "/data/c.yml" || f.RootFS != "/host" || f.LogFormat != "json" {
-		t.Fatalf("set: %+v %v", f, err)
+	if p, err := ParseFlags([]string{"-config", "/data/c.yml"}, io.Discard); err != nil || p != "/data/c.yml" {
+		t.Fatalf("set: %q %v", p, err)
 	}
-	for _, bad := range [][]string{{"--nope"}, {"--log.level=loud"}, {"--log.format=xml"}, {"extra"}} {
+	for _, bad := range [][]string{{"--nope"}, {"--version"}, {"extra"}} {
 		if _, err := ParseFlags(bad, io.Discard); err == nil {
 			t.Errorf("%v: expected error", bad)
 		}
@@ -39,44 +35,28 @@ func TestParseFlags(t *testing.T) {
 
 func TestLogger(t *testing.T) {
 	var b bytes.Buffer
-	NewLogger(Flags{LogLevel: "warn", LogFormat: "json"}, &b).Warn("x", "k", 1)
+	NewLogger("warn", "json", &b).Warn("x", "k", 1)
 	if !strings.Contains(b.String(), `"msg":"x"`) {
 		t.Fatalf("json: %s", b.String())
 	}
 	b.Reset()
-	NewLogger(Flags{LogLevel: "error", LogFormat: "logfmt"}, &b).Warn("hidden")
+	NewLogger("error", "logfmt", &b).Warn("hidden")
 	if b.Len() != 0 {
 		t.Fatal("level not applied")
-	}
-	if !strings.Contains(VersionString(), "hatchlens dev") {
-		t.Fatal(VersionString())
 	}
 }
 
 func newServer(t *testing.T, cfgText string) *Server {
-	dir := t.TempDir()
-	file := filepath.Join(dir, "config.yml")
-	if cfgText != "" {
-		if err := os.WriteFile(file, []byte(cfgText), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	fs := host.New("/")
-	cfg := config.Default()
-	cfg.Docker.Enabled = false
-	s := &Server{Flags: Flags{ConfigFile: file}, Log: log, FS: fs, reload: make(chan chan error), trigger: make(chan struct{}, 1), done: make(chan struct{})}
-	s.Core = core.New(cfg, core.Options{FS: fs, StorageDir: dir, Log: log})
-	return s
-}
-
-// After the loop stopped, a reload request gets a 503 instead of hanging.
-func TestReloadAfterStop(t *testing.T) {
-	s := newServer(t, "")
-	close(s.done)
-	if code, _ := get(t, s.Handler(), "POST", "/-/reload"); code != 503 {
-		t.Fatalf("code %d", code)
+	cfg, err := config.Parse([]byte(cfgText), os.LookupEnv, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
+	cfg.Docker.Enabled = false
+	s := &Server{Log: log, FS: fs, trigger: make(chan struct{}, 1)}
+	s.Core = core.New(cfg, core.Options{FS: fs, StorageDir: t.TempDir(), Log: log})
+	return s
 }
 
 // A cancelled context stops the loop before the first reconcile.
@@ -84,7 +64,7 @@ func TestLoopStopsOnCancelledContext(t *testing.T) {
 	s := newServer(t, "")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if code := s.loop(ctx, nil); code != 0 || s.Core.Ready() {
+	if code := s.loop(ctx); code != 0 || s.Core.Ready() {
 		t.Fatalf("code %d ready %v", code, s.Core.Ready())
 	}
 }
@@ -114,54 +94,8 @@ func TestHandler(t *testing.T) {
 	if code != 200 || !strings.Contains(body, "hatchlens_build_info") || !strings.Contains(body, "hatchlens_reconcile_errors_total 0") {
 		t.Fatalf("metrics %d:\n%s", code, body)
 	}
-	if code, _ := get(t, h, "GET", "/-/reload"); code != 405 {
-		t.Fatal("reload GET")
-	}
-	go func() {
-		res := <-s.reload
-		res <- s.Reload()
-		res2 := <-s.reload
-		os.WriteFile(s.Flags.ConfigFile, []byte("bad: ["), 0o644)
-		res2 <- s.Reload()
-	}()
-	if code, body := get(t, h, "POST", "/-/reload"); code != 200 {
-		t.Fatalf("reload: %d %s", code, body)
-	}
-	if code, _ := get(t, h, "POST", "/-/reload"); code != 500 {
-		t.Fatal("bad reload must fail")
-	}
-	_, body = get(t, h, "GET", "/metrics")
-	if !strings.Contains(body, "hatchlens_config_last_reload_successful 0") {
-		t.Fatal("reload failure not visible")
-	}
-}
-
-// A missing or empty file at reload keeps the previous config (CFG-5).
-func TestReloadMissingOrEmptyFile(t *testing.T) {
-	s := newServer(t, "global: { reconcile_interval: 5s }\ndirectories: [ { path: /srv } ]")
-	if err := s.Reload(); err != nil {
-		t.Fatal(err)
-	}
-	check := func(what string) {
-		t.Helper()
-		if err := s.Reload(); err == nil {
-			t.Fatalf("%s: expected an error", what)
-		}
-		cfg := s.Core.Config()
-		if cfg.Global.ReconcileInterval.D() != 5*time.Second || len(cfg.Directories) != 1 {
-			t.Fatalf("%s: config replaced: %+v", what, cfg)
-		}
-		if !strings.Contains(metricsOf(t, s), "hatchlens_config_last_reload_successful 0") {
-			t.Fatalf("%s: metric", what)
-		}
-	}
-	os.Remove(s.Flags.ConfigFile)
-	check("missing")
-	os.WriteFile(s.Flags.ConfigFile, nil, 0o644)
-	check("empty")
-	os.WriteFile(s.Flags.ConfigFile, []byte("global: { reconcile_interval: 7s }"), 0o644)
-	if err := s.Reload(); err != nil || s.Core.Config().Global.ReconcileInterval.D() != 7*time.Second {
-		t.Fatalf("valid again: %v", err)
+	if code, _ := get(t, h, "POST", "/-/reload"); code != 404 {
+		t.Fatal("no reload endpoint")
 	}
 }
 
@@ -172,24 +106,30 @@ func metricsOf(t *testing.T, s *Server) string {
 }
 
 func TestMainExitCodes(t *testing.T) {
-	var out, errb bytes.Buffer
-	if code := Main([]string{"--version"}, &out, &errb); code != 0 || !strings.Contains(out.String(), "hatchlens") {
-		t.Fatalf("version: %d %s", code, out.String())
-	}
-	if code := Main([]string{"--bogus"}, &out, &errb); code != 2 {
+	var errb bytes.Buffer
+	if code := Main([]string{"--bogus"}, &errb); code != 2 {
 		t.Fatalf("bad flag: %d", code)
 	}
-	if code := Main([]string{"-h"}, &out, &errb); code != 0 {
+	if code := Main([]string{"-h"}, &errb); code != 0 {
 		t.Fatalf("help: %d", code)
 	}
 	dir := t.TempDir()
 	bad := filepath.Join(dir, "c.yml")
 	os.WriteFile(bad, []byte("nope: 1"), 0o644)
-	if code := Main([]string{"--config.file=" + bad, "--storage.path=" + dir}, &out, &errb); code != 1 {
+	if code := Main([]string{"-config", bad}, &errb); code != 1 {
 		t.Fatalf("bad config: %d", code)
 	}
-	if code := Main([]string{"--config.file=" + filepath.Join(dir, "none"), "--storage.path=" + dir,
-		"--web.listen-address=256.0.0.1:1", "--docker.socket="}, &out, &errb); code != 1 {
+	if code := Main([]string{"-config", filepath.Join(dir, "none")}, &errb); code != 1 {
+		t.Fatalf("missing file: %d", code)
+	}
+	file := filepath.Join(dir, "file")
+	os.WriteFile(file, nil, 0o644)
+	t.Setenv("HATCHLENS_CONFIG", "{ global: { rootfs: / }, directories: [ { path: '"+file+"' } ] }")
+	if code := Main(nil, &errb); code != 1 || !strings.Contains(errb.String(), "not a directory") {
+		t.Fatalf("not a directory: %d", code)
+	}
+	t.Setenv("HATCHLENS_CONFIG", "{ global: { listen_address: '256.0.0.1:1', storage_path: '"+dir+"' }, docker: { socket: '' } }")
+	if code := Main(nil, &errb); code != 1 || !strings.Contains(errb.String(), "listen failed") {
 		t.Fatalf("listen failure: %d", code)
 	}
 }

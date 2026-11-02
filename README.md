@@ -67,17 +67,15 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /:/host:rslave               # project IDs are set on host directories
-      - hatchlens-data:/data        # config.yml and state.json
+      - hatchlens-data:/data        # state.json, config.yml if used
     ports:
       - "8080:8080"
 volumes:
   hatchlens-data:
 ```
 
-The image already sets `--config.file=/data/config.yml`, `--storage.path=/data` and `--path.rootfs=/host`.
-A `command:` replaces them, so repeat them when adding flags; see [Install.md](docs/Install.md#2-run-the-container).
-
-Docker volumes are measured without any config. Other directories go into `/data/config.yml`:
+Docker volumes are measured without any config. Other directories go into the config: a file named in
+`HATCHLENS_CONFIG_FILE` (e.g. `/data/config.yml`) or the YAML itself in `HATCHLENS_CONFIG`, read at start:
 
 ```yaml
 directories:
@@ -91,13 +89,13 @@ directories:
 Main metrics: `hatchlens_directory_bytes` and `hatchlens_directory_inodes` (labels `path`, `source`,
 `volume`, `stack`), `hatchlens_directory_info` (`owner`, `state`, `project_id`),
 `hatchlens_admin_action_needed` and `hatchlens_directory_unmeasurable` (what is missing and why; the
-log has the exact command). Endpoints: `/metrics`, `/-/healthy`, `/-/ready`, `POST /-/reload`.
+log has the exact command). Endpoints: `/metrics`, `/-/healthy`, `/-/ready`.
 
 ## Documentation
 
 - [Install.md](docs/Install.md): enabling project quotas per filesystem, running the container,
   Prometheus, update, uninstall.
-- [Configuration.md](docs/Configuration.md): flags and every config key.
+- [Configuration.md](docs/Configuration.md): config source and every key.
 - [Metrics.md](docs/Metrics.md): all metrics, reasons and admin actions, example queries and alerts.
 - [Troubleshooting.md](docs/Troubleshooting.md): what to do when something looks wrong.
 - [Build.md](docs/Build.md): building, unit and integration tests, coverage.
@@ -109,7 +107,7 @@ log has the exact command). Endpoints: `/metrics`, `/-/healthy`, `/-/ready`, `PO
 > Before 1.0, HatchLens serves `/metrics` on port **8080** (the same default as cAdvisor). With 1.0 the
 > default changes to a port registered in the Prometheus
 > [default port allocations](https://github.com/prometheus/prometheus/wiki/Default-port-allocations).
-> If you depend on the port, set it explicitly with `--web.listen-address`, and update your Prometheus
+> If you depend on the port, set it explicitly with `global.listen_address`, and update your Prometheus
 > scrape configuration when you move to 1.0.
 
 ## Releases

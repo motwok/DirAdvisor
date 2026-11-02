@@ -7,7 +7,7 @@
 | `cmd/hatchlens` | `main` |
 | `internal/app` | flags, HTTP endpoints, signals, main loop |
 | `internal/core` | discovery, ownership, labels, project IDs, walks, metrics |
-| `internal/config` | config file, environment variables, globs |
+| `internal/config` | config source, environment variables, globs |
 | `internal/docker` | read-only Docker API client |
 | `internal/host` | Linux: mounts, `quotactl_fd`, project ID ioctls, walks, ZFS |
 | `internal/state` | `state.json` |

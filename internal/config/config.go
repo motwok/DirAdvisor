@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package config loads and validates the HatchLens config file.
+// Package config loads and validates the HatchLens config.
 package config
 
 import (
@@ -27,6 +27,11 @@ type Config struct {
 }
 
 type Global struct {
+	ListenAddress          string           `yaml:"listen_address"`
+	LogLevel               string           `yaml:"log_level"`
+	LogFormat              string           `yaml:"log_format"`
+	StoragePath            string           `yaml:"storage_path"`
+	RootFS                 string           `yaml:"rootfs"`
 	ReconcileInterval      Duration         `yaml:"reconcile_interval"`
 	AdminActionLogInterval Duration         `yaml:"admin_action_log_interval"`
 	WalkFilesPerSecond     int              `yaml:"walk_files_per_second"`
@@ -45,6 +50,7 @@ type IDRange struct {
 }
 
 type Docker struct {
+	Socket          string      `yaml:"socket"`
 	Enabled         bool        `yaml:"enabled"`
 	Exclude         Exclude     `yaml:"exclude"`
 	ContainerLabels []LabelRef  `yaml:"container_labels"`
@@ -121,12 +127,17 @@ func (d Duration) D() time.Duration { return time.Duration(d) }
 func Default() *Config {
 	return &Config{
 		Global: Global{
+			ListenAddress:          ":8080",
+			LogLevel:               "info",
+			LogFormat:              "logfmt",
+			StoragePath:            "/data",
+			RootFS:                 "/host",
 			ReconcileInterval:      Duration(60 * time.Second),
 			AdminActionLogInterval: Duration(time.Hour),
 			ImageUpdateCheck:       ImageUpdateCheck{Interval: Duration(24 * time.Hour)},
 			ProjectIDs:             IDRange{From: 100000, To: 199999},
 		},
-		Docker: Docker{Enabled: true},
+		Docker: Docker{Socket: "/var/run/docker.sock", Enabled: true},
 	}
 }
 
@@ -136,17 +147,21 @@ type StatFunc func(hostPath string) (exists, isDir bool)
 // LookupFunc returns an environment variable.
 type LookupFunc func(name string) (string, bool)
 
-// Load reads the file. A missing file gives the defaults and found=false.
-func Load(file string, lookup LookupFunc, stat StatFunc) (cfg *Config, found bool, err error) {
-	data, err := os.ReadFile(file)
-	if errors.Is(err, os.ErrNotExist) {
-		return Default(), false, nil
+// Source resolves CFG-2: -config, then HATCHLENS_CONFIG_FILE, then HATCHLENS_CONFIG. Without any,
+// data is empty (the defaults) and src is "defaults".
+func Source(flagPath string, getenv func(string) string) (data []byte, src string, err error) {
+	if flagPath != "" {
+		data, err = os.ReadFile(flagPath)
+		return data, flagPath, err
 	}
-	if err != nil {
-		return nil, false, err
+	if p := getenv("HATCHLENS_CONFIG_FILE"); p != "" {
+		data, err = os.ReadFile(p)
+		return data, p, err
 	}
-	cfg, err = Parse(data, lookup, stat)
-	return cfg, true, err
+	if c := getenv("HATCHLENS_CONFIG"); c != "" {
+		return []byte(c), "HATCHLENS_CONFIG", nil
+	}
+	return nil, "defaults", nil
 }
 
 func Parse(data []byte, lookup LookupFunc, stat StatFunc) (*Config, error) {
@@ -178,6 +193,10 @@ func (c *Config) expand(lookup LookupFunc) error {
 			ex(&v)
 			m[k] = v
 		}
+	}
+	g := &c.Global
+	for _, s := range []*string{&g.ListenAddress, &g.LogLevel, &g.LogFormat, &g.StoragePath, &g.RootFS, &c.Docker.Socket} {
+		ex(s)
 	}
 	for i := range c.Docker.Exclude.Volumes {
 		ex(&c.Docker.Exclude.Volumes[i])
@@ -231,6 +250,14 @@ func checkLabelName(where, n string, allowStackOwner bool) error {
 
 func (c *Config) validate(stat StatFunc) error {
 	g := c.Global
+	switch g.LogLevel {
+	case "debug", "info", "warn", "error":
+	default:
+		return fmt.Errorf("global.log_level %q: want debug, info, warn or error", g.LogLevel)
+	}
+	if g.LogFormat != "logfmt" && g.LogFormat != "json" {
+		return fmt.Errorf("global.log_format %q: want logfmt or json", g.LogFormat)
+	}
 	if g.ReconcileInterval <= 0 || g.AdminActionLogInterval <= 0 || g.ImageUpdateCheck.Interval <= 0 {
 		return errors.New("global: durations must be greater than 0")
 	}
@@ -289,10 +316,21 @@ func (c *Config) validate(stat StatFunc) error {
 		if (!glob && Excluded(p, "")) || (glob && excludedTree(StaticPrefix(p), "")) {
 			return fmt.Errorf("%s: %s is excluded", where, p)
 		}
-		if !glob && stat != nil {
-			if exists, isDir := stat(p); exists && !isDir {
-				return fmt.Errorf("%s: %s is not a directory", where, p)
-			}
+	}
+	if stat != nil {
+		return c.CheckDirectories(stat)
+	}
+	return nil
+}
+
+// CheckDirectories rejects configured directories that exist and are not directories.
+func (c *Config) CheckDirectories(stat StatFunc) error {
+	for i, d := range c.Directories {
+		if strings.Contains(d.Path, "*") {
+			continue
+		}
+		if exists, isDir := stat(d.Path); exists && !isDir {
+			return fmt.Errorf("directories[%d]: %s is not a directory", i, d.Path)
 		}
 	}
 	return nil

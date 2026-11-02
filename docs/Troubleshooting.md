@@ -8,12 +8,12 @@ Start with `docker logs hatchlens` and the series `hatchlens_admin_action_needed
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| exits with code 1, log `invalid config` | the config file is invalid | fix the line named in the log |
+| exits with code 1, log `invalid config` | the config is invalid or its file is missing | fix the line named in the log |
 | exits with code 1, log `unsupported Docker` | Docker API older than 1.41 | update Docker |
 | exits with code 2 | unknown flag or value | check the command line |
 | `/-/ready` stays 503, `reconcile_errors_total` grows | Docker socket not reachable | mount `/var/run/docker.sock`; configured directories are measured anyway once Docker answered at least once (see `docker_root_unknown`) |
 | `directory_unmeasurable{reason="quota_access_failed"}`, log `quotactl_fd ... operation not permitted` | capabilities or seccomp | add `SYS_ADMIN`; if that is not enough, try `privileged: true` |
-| `listen failed` | port in use (cAdvisor also uses 8080) | map another host port or set `--web.listen-address` |
+| `listen failed` | port in use (cAdvisor also uses 8080) | map another host port or set `global.listen_address` |
 
 ## Values look wrong
 

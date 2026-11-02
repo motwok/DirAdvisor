@@ -82,25 +82,20 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /:/host:rslave               # project IDs are set on host directories
-      - hatchlens-data:/data        # config.yml and state.json
+      - hatchlens-data:/data        # state.json, config.yml if used
     ports:
       - "8080:8080"                  # use another host port if cAdvisor already has 8080
-    # environment:                   # variables used as ${VAR} in config.yml
-    #   DATA_ROOT: /srv
-    # command:                       # replaces the image's defaults: keep the first three flags
-    #   - --config.file=/data/config.yml
-    #   - --storage.path=/data
-    #   - --path.rootfs=/host
-    #   - --log.level=debug
+    # environment:
+    #   HATCHLENS_CONFIG_FILE: /data/config.yml   # or the YAML inline in HATCHLENS_CONFIG
+    #   DATA_ROOT: /srv                           # variables used as ${VAR} in the config
 volumes:
   hatchlens-data:
 ```
 
-- No flags are needed: the image already starts with `--config.file=/data/config.yml`,
-  `--storage.path=/data` and `--path.rootfs=/host`. A `command:` replaces these defaults completely, so
-  repeat them when you add a flag (see the commented lines); otherwise HatchLens looks for its config in
-  `/etc/hatchlens/` and for the host at `/`.
-- `environment:` sets the variables that `config.yml` refers to as `${VAR}`.
+- No config is needed for Docker volumes: the defaults match the mounts above (`/data`, `/host`, the
+  Docker socket). Point `HATCHLENS_CONFIG_FILE` at a file or put the YAML into `HATCHLENS_CONFIG`
+  ([Configuration.md](Configuration.md)); a change needs a restart of the container.
+- `environment:` also sets the variables the config refers to as `${VAR}`.
 - There is no `healthcheck:`: the image has no shell or `curl`. Prometheus sees the health through `up`
   and `/-/ready`.
 - `SYS_ADMIN` is needed to read project quotas, `DAC_READ_SEARCH` to walk directories with any
@@ -155,8 +150,8 @@ docker logs hatchlens
 
 ## Directories outside Docker volumes
 
-Bind mounts and other directories are measured only if listed in `/data/config.yml`
-(see [Configuration.md](Configuration.md)):
+Bind mounts and other directories are measured only if listed in the config (see
+[Configuration.md](Configuration.md)), e.g. `/data/config.yml` with `HATCHLENS_CONFIG_FILE: /data/config.yml`:
 
 ```yaml
 directories:

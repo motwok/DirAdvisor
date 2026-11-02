@@ -56,7 +56,7 @@ file_projid() {
 start_da() {
   docker run -d --name hatchlens \
     --cap-add SYS_ADMIN --cap-add DAC_READ_SEARCH --device /dev/zfs \
-    -e GOCOVERDIR=/cover -v "$COVER":/cover \
+    -e GOCOVERDIR=/cover -v "$COVER":/cover -e HATCHLENS_CONFIG_FILE=/data/config.yml \
     -v /var/run/docker.sock:/var/run/docker.sock:ro -v /:/host:rslave -v "$DATA":/data \
     -p "$PORT":8080 "$IMAGE" "$@" >/dev/null
   wait_for 60 "ready" curl -sf "$URL/-/ready"
@@ -141,9 +141,15 @@ CONF=$(project_id /mnt/it-ext4/conf)
 [ "$(file_projid /mnt/it-ext4/vol/before)" = "$VOL" ] || fail "outer walk touched the volume"
 [ "$(file_projid /mnt/it-ext4/conf/f)" = "$CONF" ] || fail "outer walk touched conf"
 
+restart_da() {
+  docker restart -t 10 hatchlens >/dev/null
+  wait_for 60 "ready after restart" curl -sf "$URL/-/ready"
+}
+
 step "reset of an inner entry to the outer ID"
 CONF=""
 write_config
+restart_da
 reset_done() { [ "$(file_projid /mnt/it-ext4/conf/f)" = "$OUTER" ]; }
 wait_for 60 "conf reset" reset_done
 ! metrics | grep -q 'path="/mnt/it-ext4/conf"' || fail "conf still reported"
@@ -151,6 +157,7 @@ wait_for 60 "conf reset" reset_done
 step "reset interrupted by a restart"
 BIG=""
 RATE=100 write_config
+restart_da
 sleep 4
 docker restart -t 10 hatchlens >/dev/null
 grep -q '"pending_reset": true' "$DATA/state.json" || fail "pending reset not kept"
@@ -174,8 +181,9 @@ wait_for 60 "bind volume reset" gone
 
 step "endpoints"
 curl -sf "$URL/-/healthy" >/dev/null || fail "healthy"
-[ "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$URL/-/reload")" = 200 ] || fail "reload"
-[ "$(value config_last_reload_successful)" = 1 ] || fail "reload metric"
+docker kill -s HUP hatchlens >/dev/null
+sleep 1
+curl -sf "$URL/-/healthy" >/dev/null || fail "SIGHUP must be ignored"
 
 docker stop -t 10 hatchlens >/dev/null
 chmod -R a+rX "$COVER"
