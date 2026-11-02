@@ -1,4 +1,4 @@
-DirAdvisor
+HatchLens
 Copyright (c) Emmo Emminghaus mo2000 at mo2000 dot de
 
 This program is free software: you can redistribute it and/or modify it under
@@ -10,10 +10,10 @@ later version. See the LICENSE file for the full text.
 Third-party components
 --------------------------------------------------------------------------------
 
-DirAdvisor is written in Go. The binary contains:
+HatchLens is written in Go. The binary contains:
 
 - the Go standard library, BSD-3-Clause license, Copyright The Go Authors;
 - go-yaml, the YAML parser, MIT and Apache-2.0 licenses, see its repository.
 
-The container image is built FROM scratch and contains only the DirAdvisor
+The container image is built FROM scratch and contains only the HatchLens
 binary.

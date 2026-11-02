@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/motwok/DirAdvisor/internal/config"
-	"github.com/motwok/DirAdvisor/internal/docker"
-	"github.com/motwok/DirAdvisor/internal/host"
-	"github.com/motwok/DirAdvisor/internal/state"
+	"github.com/motwok/HatchLens/internal/config"
+	"github.com/motwok/HatchLens/internal/docker"
+	"github.com/motwok/HatchLens/internal/host"
+	"github.com/motwok/HatchLens/internal/state"
 )
 
 func TestDockerReadErrors(t *testing.T) {

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Command diradvisor reports per-directory disk usage from project quotas.
+// Command hatchlens reports per-directory disk usage from project quotas.
 package main
 
 import (
 	"os"
 
-	"github.com/motwok/DirAdvisor/internal/app"
+	"github.com/motwok/HatchLens/internal/app"
 )
 
 func main() {

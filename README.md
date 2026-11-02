@@ -1,8 +1,8 @@
-# DirAdvisor
+# HatchLens
 
 Per-directory disk usage for Prometheus, without walking the file tree.
 
-DirAdvisor runs as a container next to [cAdvisor](https://github.com/google/cadvisor) and
+HatchLens runs as a container next to [cAdvisor](https://github.com/google/cadvisor) and
 [node_exporter](https://github.com/prometheus/node_exporter). It reports how much space every Docker volume
 and any configured directory uses, and which container and Compose stack owns it.
 
@@ -15,7 +15,7 @@ and any configured directory uses, and which container and Compose stack owns it
 - Tools based on `du` have to touch every file on every run. On spinning disks with many small files that
   is slow and costly, so they can only run rarely.
 
-DirAdvisor uses **project quotas** (ext4, XFS or ZFS) instead. The kernel keeps a running usage counter per directory
+HatchLens uses **project quotas** (ext4, XFS or ZFS) instead. The kernel keeps a running usage counter per directory
 tree, so reading it costs one system call, no matter how many files the tree contains. Usage can be
 scraped every minute, which makes growth alerts ("this volume grew by 2 GB in 30 minutes") practical.
 No limits are set; quotas are used for accounting only.
@@ -37,20 +37,20 @@ flowchart LR
 - **Ownership:** the container that mounts a volume read-write is its owner (`owner` is the container
   name, as in cAdvisor's `name` label). The owner's Compose project becomes the `stack` label.
   Assignments are remembered, so volumes of a stack that is shut down stay with that stack.
-- **Project IDs:** DirAdvisor assigns and maintains the project IDs itself, including for new volumes.
+- **Project IDs:** HatchLens assigns and maintains the project IDs itself, including for new volumes.
 - **Metrics:** usage is read from the kernel at scrape time.
 
 ## Requirements
 
 - Linux **5.14 or newer** on `amd64` or `arm64` (the image is multi-arch).
 - The measured directories on a filesystem with project quotas enabled. This is a one-time step for the
-  admin; DirAdvisor never does it itself, it only sets project IDs:
+  admin; HatchLens never does it itself, it only sets project IDs:
   - **ext4:** `tune2fs -O project,quota <device>` on the unmounted filesystem;
   - **XFS:** mount with the `prjquota` option;
   - **ZFS** (OpenZFS 0.8+): `zpool set feature@project_quota=enabled <pool>`, and the ZFS tools
     installed on the host.
 
-  When a step is missing, DirAdvisor reports it as `diradvisor_admin_action_needed` and logs the exact
+  When a step is missing, HatchLens reports it as `hatchlens_admin_action_needed` and logs the exact
   command.
 - Docker. The container needs the capabilities `SYS_ADMIN` and `DAC_READ_SEARCH` (on ZFS hosts also
   the device `/dev/zfs`); `privileged` works as a fallback, like cAdvisor.
@@ -59,19 +59,19 @@ flowchart LR
 
 ```yaml
 services:
-  diradvisor:
-    image: ghcr.io/motwok/diradvisor:latest
+  hatchlens:
+    image: ghcr.io/motwok/hatchlens:latest
     restart: unless-stopped
     cap_add: [ SYS_ADMIN, DAC_READ_SEARCH ]
     # devices: [ /dev/zfs ]          # only on ZFS hosts
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /:/host:rslave               # project IDs are set on host directories
-      - diradvisor-data:/data        # config.yml and state.json
+      - hatchlens-data:/data        # config.yml and state.json
     ports:
       - "8080:8080"
 volumes:
-  diradvisor-data:
+  hatchlens-data:
 ```
 
 The image already sets `--config.file=/data/config.yml`, `--storage.path=/data` and `--path.rootfs=/host`.
@@ -88,9 +88,9 @@ directories:
   - path: ${DATA_ROOT}/archive       # environment variables of the container
 ```
 
-Main metrics: `diradvisor_directory_bytes` and `diradvisor_directory_inodes` (labels `path`, `source`,
-`volume`, `stack`), `diradvisor_directory_info` (`owner`, `state`, `project_id`),
-`diradvisor_admin_action_needed` and `diradvisor_directory_unmeasurable` (what is missing and why; the
+Main metrics: `hatchlens_directory_bytes` and `hatchlens_directory_inodes` (labels `path`, `source`,
+`volume`, `stack`), `hatchlens_directory_info` (`owner`, `state`, `project_id`),
+`hatchlens_admin_action_needed` and `hatchlens_directory_unmeasurable` (what is missing and why; the
 log has the exact command). Endpoints: `/metrics`, `/-/healthy`, `/-/ready`, `POST /-/reload`.
 
 ## Documentation
@@ -106,7 +106,7 @@ log has the exact command). Endpoints: `/metrics`, `/-/healthy`, `/-/ready`, `PO
 
 > **The default port changes with version 1.0.**
 >
-> Before 1.0, DirAdvisor serves `/metrics` on port **8080** (the same default as cAdvisor). With 1.0 the
+> Before 1.0, HatchLens serves `/metrics` on port **8080** (the same default as cAdvisor). With 1.0 the
 > default changes to a port registered in the Prometheus
 > [default port allocations](https://github.com/prometheus/prometheus/wiki/Default-port-allocations).
 > If you depend on the port, set it explicitly with `--web.listen-address`, and update your Prometheus
@@ -115,9 +115,9 @@ log has the exact command). Endpoints: `/metrics`, `/-/healthy`, `/-/ready`, `PO
 ## Releases
 
 Every merge into `master` that changes the image is a release (Semantic Versioning), published as
-`ghcr.io/motwok/diradvisor:X.Y.Z` and `:latest`. **Updates of Go and of dependencies are released
+`ghcr.io/motwok/hatchlens:X.Y.Z` and `:latest`. **Updates of Go and of dependencies are released
 automatically too**; read the risks and how to opt out in [RELEASING.md](RELEASING.md). Release notes
-are on the [Releases page](https://github.com/motwok/DirAdvisor/releases), see also
+are on the [Releases page](https://github.com/motwok/HatchLens/releases), see also
 [CHANGELOG.md](CHANGELOG.md).
 
 ## Contributing
@@ -132,7 +132,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Security problems are reported privately
 
 ## Third-party
 
-DirAdvisor is written in Go; its only dependency is the YAML parser go-yaml. See [NOTICE](NOTICE).
+HatchLens is written in Go; its only dependency is the YAML parser go-yaml. See [NOTICE](NOTICE).
 
 ## Support Me
 

@@ -5,8 +5,8 @@ package core
 import (
 	"sort"
 
-	"github.com/motwok/DirAdvisor/internal/docker"
-	"github.com/motwok/DirAdvisor/internal/state"
+	"github.com/motwok/HatchLens/internal/docker"
+	"github.com/motwok/HatchLens/internal/state"
 )
 
 const (

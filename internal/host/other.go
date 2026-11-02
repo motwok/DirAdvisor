@@ -13,7 +13,7 @@ var errUnsupported = errors.New("only supported on Linux")
 
 type other struct{}
 
-// New returns a stub; DirAdvisor measures only on Linux.
+// New returns a stub; HatchLens measures only on Linux.
 func New(string) FS { return other{} }
 
 func (other) Stat(string) (bool, bool)          { return false, false }

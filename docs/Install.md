@@ -1,4 +1,4 @@
-# Installing DirAdvisor
+# Installing HatchLens
 
 1. Enable project quotas on every filesystem you want to measure (once, by the admin).
 2. Run the container.
@@ -11,13 +11,13 @@
 - Docker Engine (rootful) with API 1.41 or newer (Docker 20.10+).
 - The data to measure on ext4, XFS or ZFS (OpenZFS 0.8+) with project quotas enabled (next section).
 
-DirAdvisor never changes your filesystems, mounts or pools. It only sets project IDs on the directories
-it measures. Whatever is missing it reports as `diradvisor_admin_action_needed` and in the log, with the
+HatchLens never changes your filesystems, mounts or pools. It only sets project IDs on the directories
+it measures. Whatever is missing it reports as `hatchlens_admin_action_needed` and in the log, with the
 exact command for your host.
 
 ## 1. Enable project quotas
 
-Quotas are used for accounting only; DirAdvisor never sets limits.
+Quotas are used for accounting only; HatchLens never sets limits.
 
 ### ext4
 
@@ -52,7 +52,7 @@ unmount and mount it again (a remount is not enough):
 - Check: `xfs_quota -x -c state <mountpoint>` shows project quota accounting `ON`.
 - XFS v4 (`xfs_info <mountpoint> | grep crc` shows `crc=0`) cannot use group and project quotas at the
   same time; drop group quota or move to XFS v5.
-- With overlay2 on XFS and `prjquota`, Docker also uses project IDs for its layers. DirAdvisor never
+- With overlay2 on XFS and `prjquota`, Docker also uses project IDs for its layers. HatchLens never
   touches `overlay2` and skips IDs already in use.
 
 ### ZFS
@@ -62,7 +62,7 @@ zpool set feature@project_quota=enabled <pool>
 ```
 
 - Irreversible: OpenZFS older than 0.8 cannot import the pool afterwards.
-- The ZFS tools (`zfs`, `zpool`) must be installed on the host; DirAdvisor runs the host's own tools,
+- The ZFS tools (`zfs`, `zpool`) must be installed on the host; HatchLens runs the host's own tools,
   read-only (`zfs projectspace`, `zfs version`, `zpool get`).
 - Datasets that existed before are upgraded in the background; until then their values can be
   incomplete.
@@ -73,16 +73,16 @@ Compose file, also usable as a Portainer stack:
 
 ```yaml
 services:
-  diradvisor:
-    image: ghcr.io/motwok/diradvisor:latest
-    container_name: diradvisor
+  hatchlens:
+    image: ghcr.io/motwok/hatchlens:latest
+    container_name: hatchlens
     restart: unless-stopped
     cap_add: [ SYS_ADMIN, DAC_READ_SEARCH ]
     # devices: [ /dev/zfs ]          # only on ZFS hosts
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /:/host:rslave               # project IDs are set on host directories
-      - diradvisor-data:/data        # config.yml and state.json
+      - hatchlens-data:/data        # config.yml and state.json
     ports:
       - "8080:8080"                  # use another host port if cAdvisor already has 8080
     # environment:                   # variables used as ${VAR} in config.yml
@@ -93,36 +93,36 @@ services:
     #   - --path.rootfs=/host
     #   - --log.level=debug
 volumes:
-  diradvisor-data:
+  hatchlens-data:
 ```
 
 - No flags are needed: the image already starts with `--config.file=/data/config.yml`,
   `--storage.path=/data` and `--path.rootfs=/host`. A `command:` replaces these defaults completely, so
-  repeat them when you add a flag (see the commented lines); otherwise DirAdvisor looks for its config in
-  `/etc/diradvisor/` and for the host at `/`.
+  repeat them when you add a flag (see the commented lines); otherwise HatchLens looks for its config in
+  `/etc/hatchlens/` and for the host at `/`.
 - `environment:` sets the variables that `config.yml` refers to as `${VAR}`.
 - There is no `healthcheck:`: the image has no shell or `curl`. Prometheus sees the health through `up`
   and `/-/ready`.
 - `SYS_ADMIN` is needed to read project quotas, `DAC_READ_SEARCH` to walk directories with any
   permissions. If your setup blocks them (seccomp, AppArmor), `privileged: true` works as a fallback.
-- The host filesystem must be mounted read-write at `/host`: DirAdvisor sets project IDs there.
+- The host filesystem must be mounted read-write at `/host`: HatchLens sets project IDs there.
 - `/data` keeps `state.json` (assigned IDs and remembered owners). Keep it across updates.
 - The default port is **8080** before 1.0 and changes with 1.0, see the README.
 
 The same with `docker run`:
 
 ```bash
-docker run -d --name diradvisor --restart unless-stopped \
+docker run -d --name hatchlens --restart unless-stopped \
   --cap-add SYS_ADMIN --cap-add DAC_READ_SEARCH \
-  -v /var/run/docker.sock:/var/run/docker.sock:ro -v /:/host:rslave -v diradvisor-data:/data \
-  -p 8080:8080 ghcr.io/motwok/diradvisor:latest
+  -v /var/run/docker.sock:/var/run/docker.sock:ro -v /:/host:rslave -v hatchlens-data:/data \
+  -p 8080:8080 ghcr.io/motwok/hatchlens:latest
 ```
 
 ## 3. Prometheus
 
 ```yaml
 scrape_configs:
-  - job_name: diradvisor
+  - job_name: hatchlens
     static_configs:
       - targets: ['<host>:8080']
 ```
@@ -136,7 +136,7 @@ relabel rule to the job:
 ```yaml
     metric_relabel_configs:
       - source_labels: [__name__, stack]
-        regex: 'diradvisor_directory_(bytes|inodes);'
+        regex: 'hatchlens_directory_(bytes|inodes);'
         target_label: stack
         replacement: 'no stack'
 ```
@@ -146,12 +146,12 @@ relabel rule to the job:
 ```bash
 curl -s http://<host>:8080/-/ready          # 200 after the first successful reconcile
 curl -s http://<host>:8080/metrics | grep -E 'directory_bytes|admin_action|unmeasurable'
-docker logs diradvisor
+docker logs hatchlens
 ```
 
-- Right after the start `diradvisor_directory_assigning` is 1 for new directories: DirAdvisor walks them
+- Right after the start `hatchlens_directory_assigning` is 1 for new directories: HatchLens walks them
   once to set the project ID (with idle I/O priority). Until that is done the values are too low.
-- Every `diradvisor_admin_action_needed` series names a step for you; the log has the command.
+- Every `hatchlens_admin_action_needed` series names a step for you; the log has the command.
 
 ## Directories outside Docker volumes
 
@@ -166,7 +166,7 @@ directories:
     labels: { user: "$1" }
 ```
 
-The image has no shell; copy the file into the volume with `docker cp config.yml diradvisor:/data/`, or
+The image has no shell; copy the file into the volume with `docker cp config.yml hatchlens:/data/`, or
 mount a host directory at `/data` instead of the named volume. Changes are picked up within one
 reconcile interval.
 
@@ -174,7 +174,7 @@ reconcile interval.
 
 - `:latest` gets every release; redeploy the stack to update. See [RELEASING.md](../RELEASING.md),
   including the automatic dependency releases.
-- To stay on a version, use `ghcr.io/motwok/diradvisor:X.Y.Z`. Version tags are never rebuilt.
+- To stay on a version, use `ghcr.io/motwok/hatchlens:X.Y.Z`. Version tags are never rebuilt.
 
 ## Uninstall
 

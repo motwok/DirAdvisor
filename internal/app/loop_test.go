@@ -16,9 +16,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/motwok/DirAdvisor/internal/config"
-	"github.com/motwok/DirAdvisor/internal/core"
-	"github.com/motwok/DirAdvisor/internal/docker"
+	"github.com/motwok/HatchLens/internal/config"
+	"github.com/motwok/HatchLens/internal/core"
+	"github.com/motwok/HatchLens/internal/docker"
 )
 
 type handlerRT struct{ h http.Handler }

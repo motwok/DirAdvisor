@@ -10,16 +10,16 @@ ARG VERSION=dev REVISION=unknown BUILD_TIME=0 COVER=
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
       ${COVER:+-cover -covermode=atomic -coverpkg=./...} \
       -ldflags "-s -w \
-        -X github.com/motwok/DirAdvisor/internal/app.Version=$VERSION \
-        -X github.com/motwok/DirAdvisor/internal/app.Revision=$REVISION \
-        -X github.com/motwok/DirAdvisor/internal/app.BuildTime=$BUILD_TIME" \
-      -o /out/diradvisor ./cmd/diradvisor
+        -X github.com/motwok/HatchLens/internal/app.Version=$VERSION \
+        -X github.com/motwok/HatchLens/internal/app.Revision=$REVISION \
+        -X github.com/motwok/HatchLens/internal/app.BuildTime=$BUILD_TIME" \
+      -o /out/hatchlens ./cmd/hatchlens
 
 FROM scratch
-COPY --from=build /out/diradvisor /diradvisor
-LABEL org.opencontainers.image.source="https://github.com/motwok/DirAdvisor" \
+COPY --from=build /out/hatchlens /hatchlens
+LABEL org.opencontainers.image.source="https://github.com/motwok/HatchLens" \
       org.opencontainers.image.description="Per-directory disk usage for Prometheus, without walking the file tree." \
       org.opencontainers.image.licenses="AGPL-3.0-or-later"
 EXPOSE 8080
-ENTRYPOINT ["/diradvisor"]
+ENTRYPOINT ["/hatchlens"]
 CMD ["--config.file=/data/config.yml", "--storage.path=/data", "--path.rootfs=/host"]

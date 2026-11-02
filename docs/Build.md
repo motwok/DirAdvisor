@@ -4,7 +4,7 @@
 
 | Path | Content |
 |---|---|
-| `cmd/diradvisor` | `main` |
+| `cmd/hatchlens` | `main` |
 | `internal/app` | flags, HTTP endpoints, signals, main loop |
 | `internal/core` | discovery, ownership, labels, project IDs, walks, metrics |
 | `internal/config` | config file, environment variables, globs |
@@ -21,13 +21,13 @@ Unit tests sit next to the code (`*_test.go`). The only dependency is `go.yaml.i
 Needs the Go version in `go.mod`.
 
 ```bash
-go build ./cmd/diradvisor
-GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build ./cmd/diradvisor
-docker build -t diradvisor:dev .
+go build ./cmd/hatchlens
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build ./cmd/hatchlens
+docker build -t hatchlens:dev .
 ```
 
 The image is `FROM scratch` with one static binary. `--build-arg VERSION=... REVISION=... BUILD_TIME=...`
-set what `diradvisor_build_info` reports.
+set what `hatchlens_build_info` reports.
 
 ## Unit tests
 
@@ -49,8 +49,8 @@ image with exactly the documented capabilities. It needs root, Docker, `xfsprogs
 throw-away VM:
 
 ```bash
-docker build --build-arg COVER=1 -t diradvisor:test .
-sudo tests/integration/run.sh diradvisor:test "$PWD/cover-integration"
+docker build --build-arg COVER=1 -t hatchlens:test .
+sudo tests/integration/run.sh hatchlens:test "$PWD/cover-integration"
 ```
 
 ## Coverage

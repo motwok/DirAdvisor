@@ -1,10 +1,10 @@
 # Troubleshooting
 
-Start with `docker logs diradvisor` and the series `diradvisor_admin_action_needed` and
-`diradvisor_directory_unmeasurable`; their `action` or `reason` says what is wrong
+Start with `docker logs hatchlens` and the series `hatchlens_admin_action_needed` and
+`hatchlens_directory_unmeasurable`; their `action` or `reason` says what is wrong
 ([Metrics.md](Metrics.md#problems-and-admin-actions)).
 
-## DirAdvisor does not start or is not ready
+## HatchLens does not start or is not ready
 
 | Symptom | Cause | Fix |
 |---|---|---|
@@ -17,15 +17,15 @@ Start with `docker logs diradvisor` and the series `diradvisor_admin_action_need
 
 ## Values look wrong
 
-**Too low right after start or after adding a directory.** DirAdvisor first walks the directory to set
-the project ID; `diradvisor_directory_assigning` is 1 until it is done. The walk runs with idle I/O
+**Too low right after start or after adding a directory.** HatchLens first walks the directory to set
+the project ID; `hatchlens_directory_assigning` is 1 until it is done. The walk runs with idle I/O
 priority, so on a busy disk it can take a while. To make it gentler still, set
 `global.walk_files_per_second`.
 
 **A volume is missing.** Check that it is a `local` volume and not excluded by `docker.exclude.volumes`.
 Bind mounts are never discovered; add them under `directories`.
 
-**Bytes differ from `du`.** DirAdvisor counts allocated blocks like `du` (not `du -b`). On ZFS the size
+**Bytes differ from `du`.** HatchLens counts allocated blocks like `du` (not `du -b`). On ZFS the size
 is after compression, and blocks kept only by snapshots are not counted. Sockets, FIFOs and device
 files that existed before the walk keep their old project ID; only their inode count is affected.
 
@@ -34,7 +34,7 @@ files that existed before the walk keep their old project ID; only their inode c
 `global.project_ids` below 65536 for such hosts, or migrate the filesystem to XFS v5.
 
 **An outer directory counts less than expected.** Directories inside it that are measured on their own
-(another entry, a volume) are counted there, not in the outer one; see `diradvisor_directory_overlap`.
+(another entry, a volume) are counted there, not in the outer one; see `hatchlens_directory_overlap`.
 
 ## Ownership and labels
 
@@ -53,9 +53,9 @@ containers of that stack are candidates.
 
 ### `foreign_project_id`
 
-The directory already carries a project ID outside the configured range that DirAdvisor did not assign,
-for example from an admin or from Docker's own XFS quotas. DirAdvisor never overwrites it. If the ID is
-not needed any more, reset it (ext4/XFS) and DirAdvisor takes over on the next reconcile:
+The directory already carries a project ID outside the configured range that HatchLens did not assign,
+for example from an admin or from Docker's own XFS quotas. HatchLens never overwrites it. If the ID is
+not needed any more, reset it (ext4/XFS) and HatchLens takes over on the next reconcile:
 
 ```bash
 lsattr -pd /path            # shows the current project ID
@@ -81,14 +81,14 @@ All IDs in `global.project_ids` are in use. Widen the range; IDs already assigne
 
 ### `docker_root_unknown`
 
-Docker is enabled but has never answered since the first start, so DirAdvisor does not know Docker's
+Docker is enabled but has never answered since the first start, so HatchLens does not know Docker's
 data directory, which it must never walk into. Configured directories wait until Docker answers once;
 after that the directory is remembered across restarts. Without Docker on this host set
 `docker.enabled: false`.
 
 ### `quota_access_failed`
 
-DirAdvisor could not find the mount of the directory or could not read the quota state or usage of its
+HatchLens could not find the mount of the directory or could not read the quota state or usage of its
 filesystem. The log line next to it has the error: `operation not permitted` means a missing capability
 or a seccomp profile without `quotactl_fd` (add `SYS_ADMIN`, or `privileged: true`); on ZFS check that
 `/dev/zfs` is passed to the container and that `zpool`/`zfs` work on the host.
@@ -97,7 +97,7 @@ or a seccomp profile without `quotactl_fd` (add `SYS_ADMIN`, or `privileged: tru
 
 - A removed volume releases its ID. A bind-option volume first gets its directory reset to ID 0, because
   Docker leaves that directory in place.
-- If `state.json` is lost or corrupt (it is then kept as `state.json.bak`), DirAdvisor takes the IDs it
+- If `state.json` is lost or corrupt (it is then kept as `state.json.bak`), HatchLens takes the IDs it
   finds on the directories again, so the series keep their `project_id`.
 
 ## Removing project IDs
@@ -109,4 +109,4 @@ chattr -R -p 0 /path                  # ext4 and XFS
 zfs project -C -r /path               # ZFS
 ```
 
-Do this only for directories DirAdvisor no longer measures.
+Do this only for directories HatchLens no longer measures.

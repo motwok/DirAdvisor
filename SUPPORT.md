@@ -1,15 +1,15 @@
 # Getting help
 
-Need help with DirAdvisor? Here's where to look, in order:
+Need help with HatchLens? Here's where to look, in order:
 
 1. **Read the docs**: the [README](README.md) gives an overview and links to everything else.
 
 2. **Search existing issues**; your question may already be answered:
-   <https://github.com/motwok/DirAdvisor/issues?q=is%3Aissue>
+   <https://github.com/motwok/HatchLens/issues?q=is%3Aissue>
 
 3. **Open an issue** if you don't find an answer:
-   - [Bug report](https://github.com/motwok/DirAdvisor/issues/new?template=bug_report.yml)
-   - [Feature request](https://github.com/motwok/DirAdvisor/issues/new?template=feature_request.yml)
+   - [Bug report](https://github.com/motwok/HatchLens/issues/new?template=bug_report.yml)
+   - [Feature request](https://github.com/motwok/HatchLens/issues/new?template=feature_request.yml)
 
 ## Please note
 
@@ -20,5 +20,5 @@ Need help with DirAdvisor? Here's where to look, in order:
 
 ## Support Me
 
-DirAdvisor is free and open source. If it saves you some trouble, you can support it:
+HatchLens is free and open source. If it saves you some trouble, you can support it:
 [Buy Me a Coffee](https://ko-fi.com/motwok)

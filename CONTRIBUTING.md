@@ -1,6 +1,6 @@
-# Contributing to DirAdvisor
+# Contributing to HatchLens
 
-Thanks for your interest in DirAdvisor!
+Thanks for your interest in HatchLens!
 
 This project follows a [Code of Conduct](CODE_OF_CONDUCT.md); please be respectful.
 
@@ -8,15 +8,15 @@ This project follows a [Code of Conduct](CODE_OF_CONDUCT.md); please be respectf
 
 ## Ways to contribute
 
-- **Bug reports**: [open an issue](https://github.com/motwok/DirAdvisor/issues)
-- **Feature requests**: [open an issue](https://github.com/motwok/DirAdvisor/issues)
+- **Bug reports**: [open an issue](https://github.com/motwok/HatchLens/issues)
+- **Feature requests**: [open an issue](https://github.com/motwok/HatchLens/issues)
 - **Pull requests** are welcome, see below.
 
 Ideas, reproductions and well-described problems are genuinely valuable too.
 
 ## Pull requests
 
-DirAdvisor runs with elevated capabilities, reads the Docker socket and changes attributes of
+HatchLens runs with elevated capabilities, reads the Docker socket and changes attributes of
 directories on the host, so every change is reviewed carefully before it is merged. To make that easy:
 
 - For anything larger than a small fix, open an issue first so the approach can be agreed on.
@@ -37,7 +37,7 @@ By submitting a pull request you agree that your contribution is licensed under 
 Please include:
 
 - **What happened** and **what you expected**.
-- The **DirAdvisor version**: the image tag or digest, or the `version` label of `diradvisor_build_info`.
+- The **HatchLens version**: the image tag or digest, or the `version` label of `hatchlens_build_info`.
 - The **kernel version** (`uname -r`) and the **filesystem** of the affected directory, and whether the
   `project` and `quota` features are enabled on it (`tune2fs -l <device> | grep -i features`).
 - The **Docker version** and whether the container runs `privileged` or with `cap_add`.
@@ -49,13 +49,13 @@ Remove host names, paths or labels you do not want to make public before posting
 ## Feature requests
 
 Describe the problem you're trying to solve, not just a proposed solution; it helps find the best fit.
-Note that not every request will be implemented; DirAdvisor intentionally stays small and focused.
+Note that not every request will be implemented; HatchLens intentionally stays small and focused.
 
 ## Forking
 
-DirAdvisor is licensed under the **GNU AGPL v3** (see [LICENSE](LICENSE)). You are of course free to fork
+HatchLens is licensed under the **GNU AGPL v3** (see [LICENSE](LICENSE)). You are of course free to fork
 and modify it under those terms.
 
 ## Support Me
 
-If DirAdvisor helps you, you can support it: [Buy Me a Coffee](https://ko-fi.com/motwok)
+If HatchLens helps you, you can support it: [Buy Me a Coffee](https://ko-fi.com/motwok)

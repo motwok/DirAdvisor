@@ -1,4 +1,4 @@
-module github.com/motwok/DirAdvisor
+module github.com/motwok/HatchLens
 
 go 1.27
 

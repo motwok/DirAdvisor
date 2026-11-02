@@ -8,7 +8,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/motwok/DirAdvisor/internal/state"
+	"github.com/motwok/HatchLens/internal/state"
 )
 
 // Replaced in tests.

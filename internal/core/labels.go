@@ -5,12 +5,12 @@ package core
 import (
 	"strings"
 
-	"github.com/motwok/DirAdvisor/internal/config"
-	"github.com/motwok/DirAdvisor/internal/docker"
-	"github.com/motwok/DirAdvisor/internal/state"
+	"github.com/motwok/HatchLens/internal/config"
+	"github.com/motwok/HatchLens/internal/docker"
+	"github.com/motwok/HatchLens/internal/state"
 )
 
-const selfServicePrefix = "diradvisor.label."
+const selfServicePrefix = "hatchlens.label."
 
 func isOwnLabel(n string) bool {
 	for _, o := range config.OwnLabels {

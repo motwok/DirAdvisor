@@ -16,7 +16,7 @@ body:
       options:
         - label: I searched existing issues and this isn't a duplicate.
           required: true
-        - label: This is **not** a security vulnerability (those go through [SECURITY.md](https://github.com/motwok/DirAdvisor/security/advisories/new), not a public issue).
+        - label: This is **not** a security vulnerability (those go through [SECURITY.md](https://github.com/motwok/HatchLens/security/advisories/new), not a public issue).
           required: true
 
   - type: textarea
@@ -44,8 +44,8 @@ body:
   - type: input
     id: version
     attributes:
-      label: DirAdvisor version
-      description: Image tag or digest, or the version label of diradvisor_build_info.
+      label: HatchLens version
+      description: Image tag or digest, or the version label of hatchlens_build_info.
       placeholder: e.g. sha256:... or the version label
     validations:
       required: true
