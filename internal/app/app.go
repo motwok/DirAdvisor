@@ -18,11 +18,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/motwok/DirAdvisor/internal/config"
-	"github.com/motwok/DirAdvisor/internal/core"
-	"github.com/motwok/DirAdvisor/internal/docker"
-	"github.com/motwok/DirAdvisor/internal/host"
-	"github.com/motwok/DirAdvisor/internal/metrics"
+	"github.com/motwok/HatchLens/internal/config"
+	"github.com/motwok/HatchLens/internal/core"
+	"github.com/motwok/HatchLens/internal/docker"
+	"github.com/motwok/HatchLens/internal/host"
+	"github.com/motwok/HatchLens/internal/metrics"
 )
 
 // Set by -ldflags.
@@ -46,10 +46,10 @@ type Flags struct {
 // ParseFlags parses the command line (spec section 3). Errors mean exit 2.
 func ParseFlags(args []string, out io.Writer) (Flags, error) {
 	var f Flags
-	fs := flag.NewFlagSet("diradvisor", flag.ContinueOnError)
+	fs := flag.NewFlagSet("hatchlens", flag.ContinueOnError)
 	fs.SetOutput(out)
-	fs.StringVar(&f.ConfigFile, "config.file", "/etc/diradvisor/config.yml", "config file")
-	fs.StringVar(&f.StoragePath, "storage.path", "/var/lib/diradvisor", "directory of state.json")
+	fs.StringVar(&f.ConfigFile, "config.file", "/etc/hatchlens/config.yml", "config file")
+	fs.StringVar(&f.StoragePath, "storage.path", "/var/lib/hatchlens", "directory of state.json")
 	fs.StringVar(&f.RootFS, "path.rootfs", "/", "host root filesystem")
 	fs.StringVar(&f.DockerSocket, "docker.socket", "/var/run/docker.sock", "Docker socket")
 	fs.StringVar(&f.Listen, "web.listen-address", ":8080", "listen address for /metrics")
@@ -95,7 +95,7 @@ func NewLogger(f Flags, w io.Writer) *slog.Logger {
 }
 
 func VersionString() string {
-	return fmt.Sprintf("diradvisor %s (revision %s, %s)", Version, Revision, runtime.Version())
+	return fmt.Sprintf("hatchlens %s (revision %s, %s)", Version, Revision, runtime.Version())
 }
 
 func buildInfo() core.BuildInfo {
@@ -166,14 +166,14 @@ func (s *Server) Handler() http.Handler {
 		metrics.Write(w, s.Core.Collect(r.Context(), buildInfo()))
 	})
 	mux.HandleFunc("/-/healthy", func(w http.ResponseWriter, _ *http.Request) {
-		io.WriteString(w, "DirAdvisor is healthy.\n")
+		io.WriteString(w, "HatchLens is healthy.\n")
 	})
 	mux.HandleFunc("/-/ready", func(w http.ResponseWriter, _ *http.Request) {
 		if !s.Core.Ready() {
-			http.Error(w, "DirAdvisor is not ready.", http.StatusServiceUnavailable)
+			http.Error(w, "HatchLens is not ready.", http.StatusServiceUnavailable)
 			return
 		}
-		io.WriteString(w, "DirAdvisor is ready.\n")
+		io.WriteString(w, "HatchLens is ready.\n")
 	})
 	mux.HandleFunc("/-/reload", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -185,7 +185,7 @@ func (s *Server) Handler() http.Handler {
 		select {
 		case s.reload <- res:
 		case <-s.done:
-			http.Error(w, "DirAdvisor is shutting down.", http.StatusServiceUnavailable)
+			http.Error(w, "HatchLens is shutting down.", http.StatusServiceUnavailable)
 			return
 		case <-r.Context().Done():
 			return
@@ -199,7 +199,7 @@ func (s *Server) Handler() http.Handler {
 	return mux
 }
 
-// Main runs DirAdvisor and returns the exit code.
+// Main runs HatchLens and returns the exit code.
 func Main(args []string, stdout, stderr io.Writer) int {
 	f, err := ParseFlags(args, stderr)
 	if err != nil {

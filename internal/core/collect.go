@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/motwok/DirAdvisor/internal/host"
-	"github.com/motwok/DirAdvisor/internal/metrics"
+	"github.com/motwok/HatchLens/internal/host"
+	"github.com/motwok/HatchLens/internal/metrics"
 )
 
 // usageTTL is how long one quota read serves scrapes (spec MEA-3).
@@ -76,14 +76,14 @@ func (c *Core) readUsage(ctx context.Context, groups map[string]*usageGroup) map
 	return data
 }
 
-// BuildInfo describes the binary for diradvisor_build_info.
+// BuildInfo describes the binary for hatchlens_build_info.
 type BuildInfo struct {
 	Version, Revision, GoVersion string
 	BuildTime                    int64
 }
 
 func m(name, help, typ string) metrics.Family {
-	return metrics.Family{Name: "diradvisor_" + name, Help: help, Type: typ}
+	return metrics.Family{Name: "hatchlens_" + name, Help: help, Type: typ}
 }
 
 func b2f(b bool) float64 {
@@ -165,10 +165,10 @@ func (c *Core) Collect(ctx context.Context, bi BuildInfo) []metrics.Family {
 		one(m("reconcile_duration_seconds", "Duration of the last reconcile.", "gauge"), recSeconds),
 		one(m("reconcile_errors_total", "Failed reconciles.", "counter"), recErrors),
 		one(m("config_last_reload_successful", "1 if the last config load succeeded.", "gauge"), b2f(reloadOK)),
-		{Name: "diradvisor_build_info", Help: "Build information.", Type: "gauge", Samples: []metrics.Sample{{Labels: map[string]string{
+		{Name: "hatchlens_build_info", Help: "Build information.", Type: "gauge", Samples: []metrics.Sample{{Labels: map[string]string{
 			"version": bi.Version, "revision": bi.Revision, "goversion": bi.GoVersion}, Value: 1}}},
 		one(m("build_timestamp_seconds", "Build time of the binary.", "gauge"), float64(bi.BuildTime)),
-		{Name: "diradvisor_image_update_check", Help: "Mode of the image update check.", Type: "gauge",
+		{Name: "hatchlens_image_update_check", Help: "Mode of the image update check.", Type: "gauge",
 			Samples: []metrics.Sample{{Labels: map[string]string{"mode": img.mode()}, Value: 1}}},
 	}
 	if img.mode() == "latest" && img.checked {

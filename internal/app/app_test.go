@@ -15,14 +15,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/motwok/DirAdvisor/internal/config"
-	"github.com/motwok/DirAdvisor/internal/core"
-	"github.com/motwok/DirAdvisor/internal/host"
+	"github.com/motwok/HatchLens/internal/config"
+	"github.com/motwok/HatchLens/internal/core"
+	"github.com/motwok/HatchLens/internal/host"
 )
 
 func TestParseFlags(t *testing.T) {
 	f, err := ParseFlags(nil, io.Discard)
-	if err != nil || f.ConfigFile != "/etc/diradvisor/config.yml" || f.StoragePath != "/var/lib/diradvisor" ||
+	if err != nil || f.ConfigFile != "/etc/hatchlens/config.yml" || f.StoragePath != "/var/lib/hatchlens" ||
 		f.RootFS != "/" || f.Listen != ":8080" || f.LogLevel != "info" || f.LogFormat != "logfmt" {
 		t.Fatalf("defaults: %+v %v", f, err)
 	}
@@ -48,7 +48,7 @@ func TestLogger(t *testing.T) {
 	if b.Len() != 0 {
 		t.Fatal("level not applied")
 	}
-	if !strings.Contains(VersionString(), "diradvisor dev") {
+	if !strings.Contains(VersionString(), "hatchlens dev") {
 		t.Fatal(VersionString())
 	}
 }
@@ -111,7 +111,7 @@ func TestHandler(t *testing.T) {
 		t.Fatal("ready after reconcile")
 	}
 	code, body := get(t, h, "GET", "/metrics")
-	if code != 200 || !strings.Contains(body, "diradvisor_build_info") || !strings.Contains(body, "diradvisor_reconcile_errors_total 0") {
+	if code != 200 || !strings.Contains(body, "hatchlens_build_info") || !strings.Contains(body, "hatchlens_reconcile_errors_total 0") {
 		t.Fatalf("metrics %d:\n%s", code, body)
 	}
 	if code, _ := get(t, h, "GET", "/-/reload"); code != 405 {
@@ -131,7 +131,7 @@ func TestHandler(t *testing.T) {
 		t.Fatal("bad reload must fail")
 	}
 	_, body = get(t, h, "GET", "/metrics")
-	if !strings.Contains(body, "diradvisor_config_last_reload_successful 0") {
+	if !strings.Contains(body, "hatchlens_config_last_reload_successful 0") {
 		t.Fatal("reload failure not visible")
 	}
 }
@@ -151,7 +151,7 @@ func TestReloadMissingOrEmptyFile(t *testing.T) {
 		if cfg.Global.ReconcileInterval.D() != 5*time.Second || len(cfg.Directories) != 1 {
 			t.Fatalf("%s: config replaced: %+v", what, cfg)
 		}
-		if !strings.Contains(metricsOf(t, s), "diradvisor_config_last_reload_successful 0") {
+		if !strings.Contains(metricsOf(t, s), "hatchlens_config_last_reload_successful 0") {
 			t.Fatalf("%s: metric", what)
 		}
 	}
@@ -173,7 +173,7 @@ func metricsOf(t *testing.T, s *Server) string {
 
 func TestMainExitCodes(t *testing.T) {
 	var out, errb bytes.Buffer
-	if code := Main([]string{"--version"}, &out, &errb); code != 0 || !strings.Contains(out.String(), "diradvisor") {
+	if code := Main([]string{"--version"}, &out, &errb); code != 0 || !strings.Contains(out.String(), "hatchlens") {
 		t.Fatalf("version: %d %s", code, out.String())
 	}
 	if code := Main([]string{"--bogus"}, &out, &errb); code != 2 {

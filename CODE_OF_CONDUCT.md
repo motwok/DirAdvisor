@@ -2,7 +2,7 @@
 
 ## Our pledge
 
-DirAdvisor is meant to be a friendly, useful project. Everyone who takes part (reporting bugs,
+HatchLens is meant to be a friendly, useful project. Everyone who takes part (reporting bugs,
 requesting features, discussing, or just using it) is welcome, regardless of age, disability, ethnicity,
 sex characteristics, gender identity and expression, level of experience, nationality, personal
 appearance, race, religion, or sexual orientation. We want participation to be a harassment-free
@@ -59,4 +59,4 @@ participant. The maintainer has the final say.
 
 ## Attribution
 
-This Code of Conduct is inspired by common open-source community standards, adapted for DirAdvisor.
+This Code of Conduct is inspired by common open-source community standards, adapted for HatchLens.

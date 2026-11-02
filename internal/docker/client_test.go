@@ -41,10 +41,10 @@ func fake(api string) *Client {
 		io.WriteString(w, `[{"Id":"abc","Names":["/web-1"],"State":"running","Created":5,"Mounts":[{"Type":"volume","Name":"v","RW":true}]}]`)
 	})
 	mux.HandleFunc("/v1.41/containers/abc/json", func(w http.ResponseWriter, _ *http.Request) {
-		io.WriteString(w, `{"Id":"abc","Image":"sha256:1","Config":{"Image":"ghcr.io/motwok/diradvisor:latest"}}`)
+		io.WriteString(w, `{"Id":"abc","Image":"sha256:1","Config":{"Image":"ghcr.io/motwok/hatchlens:latest"}}`)
 	})
 	mux.HandleFunc("/v1.41/images/sha256:1/json", func(w http.ResponseWriter, _ *http.Request) {
-		io.WriteString(w, `{"RepoDigests":["ghcr.io/motwok/diradvisor@sha256:aa"]}`)
+		io.WriteString(w, `{"RepoDigests":["ghcr.io/motwok/hatchlens@sha256:aa"]}`)
 	})
 	mux.HandleFunc("/v1.41/distribution/", func(w http.ResponseWriter, _ *http.Request) {
 		io.WriteString(w, `{"Descriptor":{"digest":"sha256:bb"}}`)
@@ -75,13 +75,13 @@ func TestClient(t *testing.T) {
 	if err != nil || len(cs) != 1 || cs[0].Name() != "web-1" || !cs[0].Mounts[0].RW {
 		t.Fatalf("containers: %v %v", cs, err)
 	}
-	if j, err := c.Container(ctx, "abc"); err != nil || j.Config.Image != "ghcr.io/motwok/diradvisor:latest" {
+	if j, err := c.Container(ctx, "abc"); err != nil || j.Config.Image != "ghcr.io/motwok/hatchlens:latest" {
 		t.Fatalf("container: %v %v", j, err)
 	}
-	if d, err := c.ImageRepoDigests(ctx, "sha256:1"); err != nil || d[0] != "ghcr.io/motwok/diradvisor@sha256:aa" {
+	if d, err := c.ImageRepoDigests(ctx, "sha256:1"); err != nil || d[0] != "ghcr.io/motwok/hatchlens@sha256:aa" {
 		t.Fatalf("digests: %v %v", d, err)
 	}
-	if d, err := c.DistributionDigest(ctx, "ghcr.io/motwok/diradvisor:latest"); err != nil || d != "sha256:bb" {
+	if d, err := c.DistributionDigest(ctx, "ghcr.io/motwok/hatchlens:latest"); err != nil || d != "sha256:bb" {
 		t.Fatalf("distribution: %v %v", d, err)
 	}
 	_, err = c.Container(ctx, "missing")

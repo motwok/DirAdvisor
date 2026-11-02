@@ -1,6 +1,6 @@
-# Releasing DirAdvisor
+# Releasing HatchLens
 
-DirAdvisor is released as a container image, `ghcr.io/motwok/diradvisor`, with
+HatchLens is released as a container image, `ghcr.io/motwok/hatchlens`, with
 [Semantic Versioning](https://semver.org) (0.x before 1.0). **Every merge into `master` that changes the
 image is a release**, that is changes to Go code (not tests), `go.mod`/`go.sum` or the `Dockerfile`. Merges that
 only touch documentation or CI build nothing new; they are listed in the next real release. There is no
@@ -69,10 +69,10 @@ That is how security fixes in Go and its standard library reach you within a few
 
 What limits that risk:
 
-- DirAdvisor has a single dependency besides the Go standard library (the YAML parser go-yaml).
+- HatchLens has a single dependency besides the Go standard library (the YAML parser go-yaml).
 - `go.sum` pins every module and is checked against the Go checksum database.
 - Dependabot waits **3 days** after a new version appears before proposing it (cooldown), so a
-  compromised release that is found and pulled quickly never reaches DirAdvisor. For go-yaml, security
+  compromised release that is found and pulled quickly never reaches HatchLens. For go-yaml, security
   updates with an advisory are not delayed; Go itself arrives as a base image update and always waits
   the 3 days.
 - The `golang` build image is pinned in the `Dockerfile` and only changes through a reviewed-by-CI pull
@@ -89,9 +89,9 @@ Version tags are never rebuilt. Pin the deployment to the version tag of an earl
 
 ## Deployment
 
-DirAdvisor only publishes images. Pulling `:latest` and redeploying the container is up to the
+HatchLens only publishes images. Pulling `:latest` and redeploying the container is up to the
 deployment, for example a scheduled stack redeploy. No credentials are needed: the repository and the
 image are public.
 
-DirAdvisor can optionally tell you when a newer `:latest` exists than the one it runs (image update
+HatchLens can optionally tell you when a newer `:latest` exists than the one it runs (image update
 check, off by default), so you notice a stuck redeploy.

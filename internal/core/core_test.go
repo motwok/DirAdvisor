@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/motwok/DirAdvisor/internal/config"
-	"github.com/motwok/DirAdvisor/internal/docker"
-	"github.com/motwok/DirAdvisor/internal/host"
-	"github.com/motwok/DirAdvisor/internal/state"
+	"github.com/motwok/HatchLens/internal/config"
+	"github.com/motwok/HatchLens/internal/docker"
+	"github.com/motwok/HatchLens/internal/host"
+	"github.com/motwok/HatchLens/internal/state"
 )
 
 const volPath = "/var/lib/docker/volumes/app_data/_data"
@@ -39,14 +39,14 @@ func TestNewVolumeGetsIDAndWalk(t *testing.T) {
 	e.fs.usage[100000] = host.Usage{Bytes: 4096, Inodes: 2}
 	out := e.metricsText()
 	for _, want := range []string{
-		`diradvisor_directory_bytes{path="` + volPath + `",source="volume",stack="app",volume="app_data"} 4096`,
-		`diradvisor_directory_inodes{path="` + volPath + `",source="volume",stack="app",volume="app_data"} 2`,
-		`diradvisor_directory_info{owner="app-web-1",path="` + volPath + `",project_id="100000",state="running"} 1`,
-		`diradvisor_directory_last_used_timestamp_seconds{path="` + volPath + `"} 1.7e+09`,
-		`diradvisor_directory_assigning{path="` + volPath + `"} 0`,
-		`diradvisor_build_info{goversion="go1.27",revision="abc",version="1.2.3"} 1`,
-		`diradvisor_image_update_check{mode="disabled"} 1`,
-		`diradvisor_config_last_reload_successful 1`,
+		`hatchlens_directory_bytes{path="` + volPath + `",source="volume",stack="app",volume="app_data"} 4096`,
+		`hatchlens_directory_inodes{path="` + volPath + `",source="volume",stack="app",volume="app_data"} 2`,
+		`hatchlens_directory_info{owner="app-web-1",path="` + volPath + `",project_id="100000",state="running"} 1`,
+		`hatchlens_directory_last_used_timestamp_seconds{path="` + volPath + `"} 1.7e+09`,
+		`hatchlens_directory_assigning{path="` + volPath + `"} 0`,
+		`hatchlens_build_info{goversion="go1.27",revision="abc",version="1.2.3"} 1`,
+		`hatchlens_image_update_check{mode="disabled"} 1`,
+		`hatchlens_config_last_reload_successful 1`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in\n%s", want, out)
@@ -129,7 +129,7 @@ func TestAdminActionAndForeignID(t *testing.T) {
 		t.Fatalf("unmeas: %+v", e.c.view.unmeas)
 	}
 	out := e.metricsText()
-	if !strings.Contains(out, `diradvisor_admin_action_needed{action="enable_project_quota_feature",fstype="ext4",mountpoint="/srv"} 1`) {
+	if !strings.Contains(out, `hatchlens_admin_action_needed{action="enable_project_quota_feature",fstype="ext4",mountpoint="/srv"} 1`) {
 		t.Fatalf("action missing:\n%s", out)
 	}
 	if !strings.Contains(e.c.view.actions[0].Command, "tune2fs -O project,quota /dev/sdb1") {
@@ -384,7 +384,7 @@ func TestRunWalkerAndImageLoop(t *testing.T) {
 func TestSaveAndReload(t *testing.T) {
 	e := newEnv(t)
 	e.c.ReloadFailed()
-	if !strings.Contains(e.metricsText(), "diradvisor_config_last_reload_successful 0") {
+	if !strings.Contains(e.metricsText(), "hatchlens_config_last_reload_successful 0") {
 		t.Fatal("reload failure not reported")
 	}
 	cfg := config.Default()

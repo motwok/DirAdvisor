@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/motwok/DirAdvisor/internal/config"
-	"github.com/motwok/DirAdvisor/internal/state"
+	"github.com/motwok/HatchLens/internal/config"
+	"github.com/motwok/HatchLens/internal/state"
 )
 
 // A glob match and an explicit path for the same directory share one state
@@ -130,7 +130,7 @@ func TestContainerLabelsKeptWithoutOwner(t *testing.T) {
 	e.cfg.Docker.ContainerLabels = []config.LabelRef{{From: "com.example.team"}}
 	e.volume("v", map[string]string{"com.docker.compose.project": "app"}, nil)
 	e.container("c1", "app-web-1", "running", 1, map[string]string{
-		"com.docker.compose.project": "app", "com.example.team": "ops", "diradvisor.label.tier": "hot",
+		"com.docker.compose.project": "app", "com.example.team": "ops", "hatchlens.label.tier": "hot",
 	}, rw("v"))
 	e.reconcile()
 	want := map[string]string{"container_label_com_example_team": "ops", "tier": "hot"}

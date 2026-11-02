@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/motwok/DirAdvisor/internal/config"
+	"github.com/motwok/HatchLens/internal/config"
 )
 
 // Scrapes within usageTTL share one quota read; parallel scrapes wait for the

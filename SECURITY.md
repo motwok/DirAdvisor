@@ -1,6 +1,6 @@
 # Security Policy
 
-DirAdvisor runs as a container with elevated capabilities, reads the Docker API and sets project IDs on directories of
+HatchLens runs as a container with elevated capabilities, reads the Docker API and sets project IDs on directories of
 the host. That makes it security-sensitive by nature, and reports are taken seriously.
 
 ## Reporting a vulnerability
@@ -11,7 +11,7 @@ security problem.**
 Use **GitHub's private vulnerability reporting**:
 
 1. Go to the repository's **Security** tab ->
-   **[Report a vulnerability](https://github.com/motwok/DirAdvisor/security/advisories/new)**.
+   **[Report a vulnerability](https://github.com/motwok/HatchLens/security/advisories/new)**.
 2. Describe the issue with enough detail to reproduce and assess it.
 
 This keeps the report private between you and the maintainer and integrates with GitHub Security
@@ -44,7 +44,7 @@ update to the newest one.
 
 ## Automatic dependency releases
 
-Updates of Go and of DirAdvisor's dependencies are merged automatically once their checks pass, and
+Updates of Go and of HatchLens's dependencies are merged automatically once their checks pass, and
 **every such merge that changes the image is a release**. Security
 fixes therefore reach `:latest` within a few days, but a vulnerable or compromised Go release or
 dependency would be shipped automatically as well. If you want to review updates first, pin a version tag instead of `:latest`. Details and
@@ -52,7 +52,7 @@ mitigations: [RELEASING.md](RELEASING.md#dependency-updates-are-released-automat
 
 ## Scope
 
-DirAdvisor deliberately does things that can look alarming but are by design:
+HatchLens deliberately does things that can look alarming but are by design:
 
 - it runs with **`SYS_ADMIN` and `DAC_READ_SEARCH`** added (on ZFS hosts also access to `/dev/zfs`),
   or `privileged` as a fallback, because reading project quotas and setting project IDs on all files
@@ -66,7 +66,7 @@ DirAdvisor deliberately does things that can look alarming but are by design:
   networks.
 - the measurement **trusts the project ID on each file**. Root inside a container may change the project
   ID of files it owns (`chattr -p`), so a tenant can under-report its own volume or charge files to
-  another volume's ID; DirAdvisor re-checks only the top directory. Where tenants are not trusted, run
+  another volume's ID; HatchLens re-checks only the top directory. Where tenants are not trusted, run
   the daemon with `userns-remap`, which makes the kernel refuse such changes.
 
 These documented behaviors are **not** vulnerabilities on their own. Genuine security issues include, for

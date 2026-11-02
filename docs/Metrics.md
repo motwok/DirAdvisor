@@ -1,6 +1,6 @@
 # Metrics
 
-All metrics have the prefix `diradvisor_`; all are gauges except `reconcile_errors_total`.
+All metrics have the prefix `hatchlens_`; all are gauges except `reconcile_errors_total`.
 
 ## Directories
 
@@ -24,7 +24,7 @@ All metrics have the prefix `diradvisor_`; all are gauges except `reconcile_erro
   continuous when a stack stops. Join them when needed:
 
   ```promql
-  diradvisor_directory_bytes * on(instance, path) group_left(state, owner) diradvisor_directory_info
+  hatchlens_directory_bytes * on(instance, path) group_left(state, owner) hatchlens_directory_info
   ```
 
 - `owner` is the container name, the same value as cAdvisor's `name` label. Volume bytes per container,
@@ -33,7 +33,7 @@ All metrics have the prefix `diradvisor_`; all are gauges except `reconcile_erro
   ```promql
   label_replace(
     sum by (instance, owner) (
-      diradvisor_directory_bytes * on(instance, path) group_left(owner) diradvisor_directory_info
+      hatchlens_directory_bytes * on(instance, path) group_left(owner) hatchlens_directory_info
     ),
     "name", "$1", "owner", "(.+)")
   ```
@@ -63,7 +63,7 @@ All metrics have the prefix `diradvisor_`; all are gauges except `reconcile_erro
 | `quota_access_failed` | the quota state or usage of the filesystem could not be read | see [Troubleshooting.md](Troubleshooting.md#quota_access_failed) |
 | `docker_root_unknown` | Docker never answered since the first start, so its data directory is unknown | make the Docker socket reachable, or set `docker.enabled: false` |
 
-## DirAdvisor itself
+## HatchLens itself
 
 | Metric | Labels | Value |
 |---|---|---|
@@ -81,26 +81,26 @@ All metrics have the prefix `diradvisor_`; all are gauges except `reconcile_erro
 
 ```yaml
 groups:
-  - name: diradvisor
+  - name: hatchlens
     rules:
-      - alert: DirAdvisorDown
-        expr: up{job="diradvisor"} == 0
+      - alert: HatchLensDown
+        expr: up{job="hatchlens"} == 0
         for: 5m
       - alert: VolumeGrowsFast
-        expr: delta(diradvisor_directory_bytes[30m]) > 2e9
-      - alert: DirAdvisorAdminAction
-        expr: diradvisor_admin_action_needed == 1
+        expr: delta(hatchlens_directory_bytes[30m]) > 2e9
+      - alert: HatchLensAdminAction
+        expr: hatchlens_admin_action_needed == 1
         annotations:
-          summary: '{{ $labels.action }} on {{ $labels.mountpoint }}, see the DirAdvisor log'
+          summary: '{{ $labels.action }} on {{ $labels.mountpoint }}, see the HatchLens log'
       - alert: DirectoryUnmeasurable
-        expr: diradvisor_directory_unmeasurable == 1
+        expr: hatchlens_directory_unmeasurable == 1
         for: 15m
-      - alert: DirAdvisorReconcileFailing
-        expr: increase(diradvisor_reconcile_errors_total[15m]) > 0
-      - alert: DirAdvisorUpdateNotRolledOut
+      - alert: HatchLensReconcileFailing
+        expr: increase(hatchlens_reconcile_errors_total[15m]) > 0
+      - alert: HatchLensUpdateNotRolledOut
         expr: >
-          diradvisor_image_update_available == 1
-          and time() - diradvisor_image_update_available_since_timestamp_seconds > 2 * 86400
+          hatchlens_image_update_available == 1
+          and time() - hatchlens_image_update_available_since_timestamp_seconds > 2 * 86400
 ```
 
 Thresholds and windows are examples; choose your own.

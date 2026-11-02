@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package config loads and validates the DirAdvisor config file.
+// Package config loads and validates the HatchLens config file.
 package config
 
 import (
@@ -17,7 +17,7 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// OwnLabels are set by DirAdvisor and cannot be set from the config.
+// OwnLabels are set by HatchLens and cannot be set from the config.
 var OwnLabels = []string{"path", "source", "volume", "stack", "owner", "state", "project_id"}
 
 type Config struct {
@@ -224,7 +224,7 @@ func checkLabelName(where, n string, allowStackOwner bool) error {
 		return fmt.Errorf("%s: invalid label name %q", where, n)
 	}
 	if isOwn(n) && !(allowStackOwner && (n == "stack" || n == "owner")) {
-		return fmt.Errorf("%s: label %q is set by DirAdvisor", where, n)
+		return fmt.Errorf("%s: label %q is set by HatchLens", where, n)
 	}
 	return nil
 }

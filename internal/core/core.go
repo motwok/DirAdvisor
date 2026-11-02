@@ -11,13 +11,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/motwok/DirAdvisor/internal/config"
-	"github.com/motwok/DirAdvisor/internal/docker"
-	"github.com/motwok/DirAdvisor/internal/host"
-	"github.com/motwok/DirAdvisor/internal/state"
+	"github.com/motwok/HatchLens/internal/config"
+	"github.com/motwok/HatchLens/internal/docker"
+	"github.com/motwok/HatchLens/internal/host"
+	"github.com/motwok/HatchLens/internal/state"
 )
 
-// Docker is the part of the Docker API DirAdvisor uses.
+// Docker is the part of the Docker API HatchLens uses.
 type Docker interface {
 	CheckVersion(ctx context.Context) (string, bool, error)
 	Info(ctx context.Context) (docker.Info, error)
@@ -28,7 +28,7 @@ type Docker interface {
 	DistributionDigest(ctx context.Context, ref string) (string, error)
 }
 
-// ErrDockerTooOld stops DirAdvisor (spec DIS-14).
+// ErrDockerTooOld stops HatchLens (spec DIS-14).
 var ErrDockerTooOld = errors.New("docker API too old")
 
 type Options struct {

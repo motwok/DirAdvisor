@@ -19,14 +19,14 @@ step() { echo "== $*"; }
 fail() {
   echo "FAIL: $*"
   echo "--- metrics"; curl -s "$URL/metrics" | grep -v '^#' || true
-  echo "--- log"; docker logs diradvisor 2>&1 | tail -80 || true
+  echo "--- log"; docker logs hatchlens 2>&1 | tail -80 || true
   exit 1
 }
 metrics() { curl -sf "$URL/metrics"; }
 # value METRIC LABELMATCH...: first sample value whose line contains all matches.
 value() {
   local name=$1; shift
-  metrics | grep "^diradvisor_${name}[{ ]" | {
+  metrics | grep "^hatchlens_${name}[{ ]" | {
     while read -r line; do
       ok=1
       for m in "$@"; do [[ $line == *"$m"* ]] || ok=0; done
@@ -44,8 +44,8 @@ wait_for() { # wait_for SECONDS DESCRIPTION COMMAND...
 }
 ge() { awk -v a="$1" -v b="$2" 'BEGIN{exit !(a+0 >= b+0)}'; }
 bytes_ge() { local v; v=$(value directory_bytes "path=\"$1\""); [ -n "$v" ] && ge "$v" "$2"; }
-no_walks() { ! metrics | grep -q '^diradvisor_directory_assigning{.*} 1$'; }
-project_id() { metrics | grep "^diradvisor_directory_info{.*path=\"$1\"" | sed 's/.*project_id="\([0-9]*\)".*/\1/'; }
+no_walks() { ! metrics | grep -q '^hatchlens_directory_assigning{.*} 1$'; }
+project_id() { metrics | grep "^hatchlens_directory_info{.*path=\"$1\"" | sed 's/.*project_id="\([0-9]*\)".*/\1/'; }
 file_projid() {
   case "$1" in
     /mnt/it-xfs/*) xfs_io -r -c lsproj "$1" | sed 's/.*= *//' ;;
@@ -54,7 +54,7 @@ file_projid() {
 }
 
 start_da() {
-  docker run -d --name diradvisor \
+  docker run -d --name hatchlens \
     --cap-add SYS_ADMIN --cap-add DAC_READ_SEARCH --device /dev/zfs \
     -e GOCOVERDIR=/cover -v "$COVER":/cover \
     -v /var/run/docker.sock:/var/run/docker.sock:ro -v /:/host:rslave -v "$DATA":/data \
@@ -118,17 +118,17 @@ for fs in ext4 xfs zfs; do
   wait_for 60 "vol_$fs >= 8 MB" bytes_ge "/mnt/it-$fs/vol" 8000000
 done
 wait_for 30 "conf >= 2 MB" bytes_ge /mnt/it-ext4/conf 2000000
-metrics | grep -q 'diradvisor_directory_bytes{.*path="/mnt/it-xfs/home/alice".*user="alice"' || fail "glob label"
-metrics | grep -q 'diradvisor_directory_bytes{path="/mnt/it-ext4/vol",source="volume",stack="itstack",volume="vol_ext4"}' || fail "volume labels"
-metrics | grep -q 'diradvisor_directory_info{owner="w_ext4",path="/mnt/it-ext4/vol",project_id="[0-9]*",state="running"} 1' || fail "owner"
-metrics | grep -q 'diradvisor_directory_info{owner="tester",path="/mnt/it-ext4/conf"' || fail "config owner"
+metrics | grep -q 'hatchlens_directory_bytes{.*path="/mnt/it-xfs/home/alice".*user="alice"' || fail "glob label"
+metrics | grep -q 'hatchlens_directory_bytes{path="/mnt/it-ext4/vol",source="volume",stack="itstack",volume="vol_ext4"}' || fail "volume labels"
+metrics | grep -q 'hatchlens_directory_info{owner="w_ext4",path="/mnt/it-ext4/vol",project_id="[0-9]*",state="running"} 1' || fail "owner"
+metrics | grep -q 'hatchlens_directory_info{owner="tester",path="/mnt/it-ext4/conf"' || fail "config owner"
 
 step "admin action and overlap"
-metrics | grep -q 'diradvisor_admin_action_needed{action="enable_project_quota_feature",fstype="ext4",mountpoint="/mnt/it-noq"} 1' || fail "admin action"
-metrics | grep -q 'diradvisor_directory_unmeasurable{path="/mnt/it-noq/vol",reason="enable_project_quota_feature"} 1' || fail "unmeasurable"
-metrics | grep -q 'diradvisor_admin_action_needed{action="mount_with_prjquota",fstype="xfs",mountpoint="/mnt/it-xfsnoq"} 1' || fail "xfs admin action"
-metrics | grep -q 'diradvisor_directory_overlap{inner="/mnt/it-ext4/conf",path="/mnt/it-ext4"} 1' || fail "overlap"
-LOG=$(docker logs diradvisor 2>&1)
+metrics | grep -q 'hatchlens_admin_action_needed{action="enable_project_quota_feature",fstype="ext4",mountpoint="/mnt/it-noq"} 1' || fail "admin action"
+metrics | grep -q 'hatchlens_directory_unmeasurable{path="/mnt/it-noq/vol",reason="enable_project_quota_feature"} 1' || fail "unmeasurable"
+metrics | grep -q 'hatchlens_admin_action_needed{action="mount_with_prjquota",fstype="xfs",mountpoint="/mnt/it-xfsnoq"} 1' || fail "xfs admin action"
+metrics | grep -q 'hatchlens_directory_overlap{inner="/mnt/it-ext4/conf",path="/mnt/it-ext4"} 1' || fail "overlap"
+LOG=$(docker logs hatchlens 2>&1)
 grep -q 'tune2fs -O project,quota' <<<"$LOG" || fail "admin action log"
 grep -q 'systemctl stop docker' <<<"$LOG" || fail "admin action log: stop Docker"
 grep -q 'add prjquota to the options of /mnt/it-xfsnoq' <<<"$LOG" || fail "admin action log: prjquota"
@@ -152,15 +152,15 @@ step "reset interrupted by a restart"
 BIG=""
 RATE=100 write_config
 sleep 4
-docker restart -t 10 diradvisor >/dev/null
+docker restart -t 10 hatchlens >/dev/null
 grep -q '"pending_reset": true' "$DATA/state.json" || fail "pending reset not kept"
 wait_for 60 "ready after restart" curl -sf "$URL/-/ready"
 big_reset() { [ "$(file_projid /mnt/it-ext4/big/f2000)" = "$OUTER" ] && ! grep -q '/mnt/it-ext4/big' "$DATA/state.json"; }
 wait_for 120 "big reset after restart" big_reset
 
 step "lost state keeps IDs"
-docker stop -t 10 diradvisor >/dev/null
-docker rm diradvisor >/dev/null
+docker stop -t 10 hatchlens >/dev/null
+docker rm hatchlens >/dev/null
 rm "$DATA/state.json"
 start_da
 wait_for 120 "walks finished" no_walks
@@ -177,6 +177,6 @@ curl -sf "$URL/-/healthy" >/dev/null || fail "healthy"
 [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$URL/-/reload")" = 200 ] || fail "reload"
 [ "$(value config_last_reload_successful)" = 1 ] || fail "reload metric"
 
-docker stop -t 10 diradvisor >/dev/null
+docker stop -t 10 hatchlens >/dev/null
 chmod -R a+rX "$COVER"
 step "passed"

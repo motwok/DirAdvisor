@@ -42,7 +42,7 @@ change-title-escapes: '\<*_&'
 template: |
   $CHANGES
 
-  **Full changelog:** https://github.com/motwok/DirAdvisor/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION
+  **Full changelog:** https://github.com/motwok/HatchLens/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION
 
 autolabeler:
   - label: 'feature'

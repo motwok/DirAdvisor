@@ -7,8 +7,8 @@ config file.
 
 | Flag | Default | In the image |
 |---|---|---|
-| `--config.file` | `/etc/diradvisor/config.yml` | `/data/config.yml` |
-| `--storage.path` | `/var/lib/diradvisor` (directory of `state.json`) | `/data` |
+| `--config.file` | `/etc/hatchlens/config.yml` | `/data/config.yml` |
+| `--storage.path` | `/var/lib/hatchlens` (directory of `state.json`) | `/data` |
 | `--path.rootfs` | `/` (where the host root filesystem is mounted) | `/host` |
 | `--docker.socket` | `/var/run/docker.sock` | default |
 | `--web.listen-address` | `:8080` (changes with 1.0) | default |
@@ -20,7 +20,7 @@ An unknown flag or an invalid value exits with code 2.
 
 ## Config file
 
-Everything is optional; a missing file means the defaults (Docker volumes only). DirAdvisor never
+Everything is optional; a missing file means the defaults (Docker volumes only). HatchLens never
 writes the file.
 
 ```yaml
@@ -63,9 +63,9 @@ directories:
 ### Loading and reloading
 
 - Unknown keys are an error.
-- An invalid file at start: DirAdvisor exits with code 1.
+- An invalid file at start: HatchLens exits with code 1.
 - The file is re-read when it changes (checked every reconcile), on `SIGHUP` and on `POST /-/reload`.
-  An invalid, missing or empty file then keeps the previous config and sets `diradvisor_config_last_reload_successful` to
+  An invalid, missing or empty file then keeps the previous config and sets `hatchlens_config_last_reload_successful` to
   0; the log says why.
 
 ### Environment variables
@@ -88,7 +88,7 @@ are glob matches (below). Variables are replaced after parsing, so a value canno
 - The same path twice: a Docker volume wins over a configured directory, among volumes the oldest, among
   configured directories the first in the file. The others are reported as `duplicate_path`.
 - Directories inside other entries are measured on their own; the outer entry counts the rest
-  (`diradvisor_directory_overlap`).
+  (`hatchlens_directory_overlap`).
 
 ### What gets measured
 
@@ -99,13 +99,13 @@ are glob matches (below). Variables are replaced after parsing, so a value canno
 
 ### Labels
 
-DirAdvisor's own labels (`path`, `source`, `volume`, `stack`, `owner`, `state`, `project_id`) are always
-set by DirAdvisor. Only for configured directories `stack` and `owner` come from `directories[].labels`.
+HatchLens's own labels (`path`, `source`, `volume`, `stack`, `owner`, `state`, `project_id`) are always
+set by HatchLens. Only for configured directories `stack` and `owner` come from `directories[].labels`.
 
 Additional labels on Docker volumes, highest priority first:
 
 1. `docker.labels` rules (the last matching rule wins per label);
-2. Docker labels `diradvisor.label.<name>=<value>` on the owner container or on the volume (container
+2. Docker labels `hatchlens.label.<name>=<value>` on the owner container or on the volume (container
    wins), set in the compose file by the stack author;
 3. the allowlists `container_labels` and `volume_labels`.
 
