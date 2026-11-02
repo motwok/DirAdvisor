@@ -98,7 +98,7 @@ func (c *Core) Collect(ctx context.Context, bi BuildInfo) []metrics.Family {
 	c.pub.mu.Lock()
 	v := c.pub.view
 	v.entries = append([]entryView(nil), c.pub.view.entries...)
-	recErrors, recSeconds, reloadOK := c.pub.recErrors, c.pub.recSeconds, c.pub.reloadOK
+	recErrors, recSeconds := c.pub.recErrors, c.pub.recSeconds
 	img := c.pub.img
 	c.pub.mu.Unlock()
 
@@ -164,7 +164,6 @@ func (c *Core) Collect(ctx context.Context, bi BuildInfo) []metrics.Family {
 		bytesF, inodesF, infoF, lastF, assignF, unmeasF, overlapF, actionF,
 		one(m("reconcile_duration_seconds", "Duration of the last reconcile.", "gauge"), recSeconds),
 		one(m("reconcile_errors_total", "Failed reconciles.", "counter"), recErrors),
-		one(m("config_last_reload_successful", "1 if the last config load succeeded.", "gauge"), b2f(reloadOK)),
 		{Name: "hatchlens_build_info", Help: "Build information.", Type: "gauge", Samples: []metrics.Sample{{Labels: map[string]string{
 			"version": bi.Version, "revision": bi.Revision, "goversion": bi.GoVersion}, Value: 1}}},
 		one(m("build_timestamp_seconds", "Build time of the binary.", "gauge"), float64(bi.BuildTime)),

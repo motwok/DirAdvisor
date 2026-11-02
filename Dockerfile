@@ -22,4 +22,3 @@ LABEL org.opencontainers.image.source="https://github.com/motwok/HatchLens" \
       org.opencontainers.image.licenses="AGPL-3.0-or-later"
 EXPOSE 8080
 ENTRYPOINT ["/hatchlens"]
-CMD ["--config.file=/data/config.yml", "--storage.path=/data", "--path.rootfs=/host"]

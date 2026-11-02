@@ -69,7 +69,6 @@ All metrics have the prefix `hatchlens_`; all are gauges except `reconcile_error
 |---|---|---|
 | `reconcile_duration_seconds` | | duration of the last reconcile |
 | `reconcile_errors_total` | | counter of failed reconciles (Docker unreachable, ...) |
-| `config_last_reload_successful` | | 0/1 |
 | `build_info` | `version`, `revision`, `goversion` | 1 |
 | `build_timestamp_seconds` | | build time of the binary |
 | `image_update_check` | `mode` (`latest`, `pinned`, `disabled`, `unknown`) | 1 |

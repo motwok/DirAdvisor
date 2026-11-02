@@ -22,7 +22,9 @@ func TestDefaults(t *testing.T) {
 	}
 	if c.Global.ReconcileInterval.D() != 60*time.Second || c.Global.AdminActionLogInterval.D() != time.Hour ||
 		c.Global.ImageUpdateCheck.Interval.D() != 24*time.Hour || c.Global.ImageUpdateCheck.Enabled ||
-		c.Global.ProjectIDs != (IDRange{100000, 199999}) || !c.Docker.Enabled {
+		c.Global.ProjectIDs != (IDRange{100000, 199999}) || !c.Docker.Enabled ||
+		c.Global.ListenAddress != ":8080" || c.Global.LogLevel != "info" || c.Global.LogFormat != "logfmt" ||
+		c.Global.StoragePath != "/data" || c.Global.RootFS != "/host" || c.Docker.Socket != "/var/run/docker.sock" {
 		t.Fatalf("unexpected defaults: %+v", c)
 	}
 }
@@ -73,6 +75,9 @@ directories:
 func TestInvalid(t *testing.T) {
 	cases := map[string]string{
 		"unknown key":      "foo: 1",
+		"log level":        "global: { log_level: loud }",
+		"log format":       "global: { log_format: xml }",
+		"unset var global": "global: { rootfs: \"${NOPE}\" }",
 		"unknown nested":   "global: { bar: 1 }",
 		"zero duration":    "global: { reconcile_interval: 0s }",
 		"bad duration":     "global: { reconcile_interval: soon }",
@@ -126,33 +131,48 @@ func TestNotADirectory(t *testing.T) {
 	if _, err := Parse([]byte("directories: [ { path: /srv/file } ]"), env(nil), stat); err == nil {
 		t.Fatal("expected error for a file")
 	}
+	if _, err := Parse([]byte("directories: [ { path: /srv/* } ]"), env(nil), stat); err != nil {
+		t.Fatalf("globs are not checked: %v", err)
+	}
 	if _, err := Parse([]byte("directories: [ { path: /srv/missing } ]"), env(nil), stat); err != nil {
 		t.Fatalf("missing path must be allowed: %v", err)
 	}
 }
 
-func TestLoad(t *testing.T) {
+func TestSource(t *testing.T) {
 	dir := t.TempDir()
-	c, found, err := Load(filepath.Join(dir, "none.yml"), env(nil), nil)
-	if err != nil || found || c == nil {
-		t.Fatalf("missing file: %v %v", found, err)
-	}
 	f := filepath.Join(dir, "c.yml")
 	if err := os.WriteFile(f, []byte("global: { reconcile_interval: 5s }"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	c, found, err = Load(f, env(nil), nil)
-	if err != nil || !found || c.Global.ReconcileInterval.D() != 5*time.Second {
-		t.Fatalf("load: %v %v %+v", found, err, c)
+	vars := map[string]string{}
+	getenv := func(n string) string { return vars[n] }
+	if data, src, err := Source("", getenv); err != nil || src != "defaults" || len(data) != 0 {
+		t.Fatalf("none: %q %q %v", data, src, err)
 	}
-	if err := os.WriteFile(f, []byte("bad: ["), 0o644); err != nil {
-		t.Fatal(err)
+	vars["HATCHLENS_CONFIG"] = "inline"
+	if data, src, err := Source("", getenv); err != nil || src != "HATCHLENS_CONFIG" || string(data) != "inline" {
+		t.Fatalf("inline: %q %q %v", data, src, err)
 	}
-	if _, _, err := Load(f, env(nil), nil); err == nil {
-		t.Fatal("expected parse error")
+	vars["HATCHLENS_CONFIG_FILE"] = f
+	if data, src, err := Source("", getenv); err != nil || src != f || !strings.Contains(string(data), "5s") {
+		t.Fatalf("file from env: %q %q %v", data, src, err)
 	}
-	if _, _, err := Load(dir, env(nil), nil); err == nil {
-		t.Fatal("expected read error for a directory")
+	none := filepath.Join(dir, "none.yml")
+	if _, src, err := Source(none, getenv); err == nil || src != none {
+		t.Fatalf("missing flag file: %q %v", src, err)
+	}
+	vars["HATCHLENS_CONFIG_FILE"] = none
+	if _, _, err := Source("", getenv); err == nil {
+		t.Fatal("missing env file must fail")
+	}
+}
+
+func TestExpandSettings(t *testing.T) {
+	data := "global: { rootfs: \"${R}\" }\ndocker: { socket: \"\" }"
+	c, err := Parse([]byte(data), env(map[string]string{"R": "/"}), nil)
+	if err != nil || c.Global.RootFS != "/" || c.Docker.Socket != "" {
+		t.Fatalf("%+v %v", c, err)
 	}
 }
 

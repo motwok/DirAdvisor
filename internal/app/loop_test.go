@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -32,16 +31,9 @@ func (r handlerRT) RoundTrip(req *http.Request) (*http.Response, error) {
 func TestLoopEvents(t *testing.T) {
 	s := newServer(t, "docker: { enabled: false }\nglobal: { reconcile_interval: 5ms }")
 	ctx, cancel := context.WithCancel(context.Background())
-	hup := make(chan os.Signal, 1)
 	done := make(chan int)
-	go func() { done <- s.loop(ctx, hup) }()
+	go func() { done <- s.loop(ctx) }()
 	s.poke()
-	hup <- syscall.SIGHUP
-	res := make(chan error, 1)
-	s.reload <- res
-	if err := <-res; err != nil {
-		t.Fatal(err)
-	}
 	time.Sleep(30 * time.Millisecond)
 	cancel()
 	if code := <-done; code != 0 {
@@ -55,19 +47,8 @@ func TestLoopDockerTooOld(t *testing.T) {
 		io.WriteString(w, `{"ApiVersion":"1.40"}`)
 	})})
 	s.Core = core.New(config.Default(), core.Options{FS: s.FS, Docker: dc, StorageDir: t.TempDir(), Log: s.Log})
-	if code := s.loop(context.Background(), nil); code != 1 {
+	if code := s.loop(context.Background()); code != 1 {
 		t.Fatalf("exit %d", code)
-	}
-}
-
-func TestReloadRequestCanceled(t *testing.T) {
-	s := newServer(t, "")
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	w := httptest.NewRecorder()
-	s.Handler().ServeHTTP(w, httptest.NewRequest("POST", "/-/reload", nil).WithContext(ctx))
-	if strings.Contains(w.Body.String(), "reloaded") {
-		t.Fatal("no reload expected")
 	}
 }
 
@@ -116,11 +97,11 @@ func TestMainDockerTooOld(t *testing.T) {
 	}
 	os.WriteFile(filepath.Join(root, "sys/module/zfs/version"), []byte("2.2.6\n"), 0o644)
 	cfg := filepath.Join(dir, "c.yml")
-	os.WriteFile(cfg, []byte("directories: [ { path: /srv } ]\n"), 0o644)
+	os.WriteFile(cfg, []byte("global: { listen_address: '127.0.0.1:0', storage_path: '"+dir+"', rootfs: '"+root+"' }\n"+
+		"docker: { socket: '"+sock+"' }\ndirectories: [ { path: /srv } ]\n"), 0o644)
 
-	var out, errb bytes.Buffer
-	code := Main([]string{"--config.file=" + cfg, "--storage.path=" + dir, "--path.rootfs=" + root,
-		"--docker.socket=" + sock, "--web.listen-address=127.0.0.1:0"}, &out, &errb)
+	var errb bytes.Buffer
+	code := Main([]string{"-config", cfg}, &errb)
 	if code != 1 || !strings.Contains(errb.String(), "unsupported Docker") || !strings.Contains(errb.String(), "ZFS versions") {
 		t.Fatalf("exit %d:\n%s", code, errb.String())
 	}

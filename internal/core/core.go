@@ -83,7 +83,6 @@ type published struct {
 	view       view
 	recErrors  float64
 	recSeconds float64
-	reloadOK   bool
 	ready      bool
 	img        imageState
 }
@@ -138,25 +137,7 @@ func New(cfg *config.Config, o Options) *Core {
 		log: o.Log, now: o.Now, walkable: map[string]bool{}, failed: map[string]time.Time{},
 		wake: make(chan struct{}, 1), logged: map[string]time.Time{},
 		dockerRoot: st.DockerRoot, rootKnown: st.DockerRoot != "" || !cfg.Docker.Enabled || o.Docker == nil,
-		pub: published{reloadOK: true},
 	}
-}
-
-// SetConfig activates a new config after a successful reload.
-func (c *Core) SetConfig(cfg *config.Config) {
-	c.mu.Lock()
-	c.cfg = cfg
-	c.mu.Unlock()
-	c.pub.mu.Lock()
-	c.pub.reloadOK = true
-	c.pub.mu.Unlock()
-}
-
-// ReloadFailed records a failed reload; the previous config stays.
-func (c *Core) ReloadFailed() {
-	c.pub.mu.Lock()
-	c.pub.reloadOK = false
-	c.pub.mu.Unlock()
 }
 
 func (c *Core) Config() *config.Config {
