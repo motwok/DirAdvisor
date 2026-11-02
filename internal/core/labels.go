@@ -10,7 +10,7 @@ import (
 	"github.com/motwok/HatchLens/internal/state"
 )
 
-const selfServicePrefix = "hatchlens.label."
+const selfServicePrefix = "de.mo2000.hatchlens.label."
 
 func isOwnLabel(n string) bool {
 	for _, o := range config.OwnLabels {

@@ -1,10 +1,12 @@
 # HatchLens
 
-Per-directory disk usage for Prometheus, without walking the file tree.
+Per-directory disk usage and image update checks of all containers for Prometheus.
 
 HatchLens runs as a container next to [cAdvisor](https://github.com/google/cadvisor) and
 [node_exporter](https://github.com/prometheus/node_exporter). It reports how much space every Docker volume
-and any configured directory uses, and which container and Compose stack owns it.
+and any configured directory uses, and which container and Compose stack owns it, without walking the
+file tree. It also reports for every container whether its registry has a newer image than the one it
+runs.
 
 > **Status:** early releases (0.x). Behavior and metrics may still change before 1.0.
 
@@ -40,6 +42,19 @@ flowchart LR
 - **Project IDs:** HatchLens assigns and maintains the project IDs itself, including for new volumes.
 - **Metrics:** usage is read from the kernel at scrape time.
 
+## Image update checks
+
+For every container whose image comes from a registry, HatchLens asks the registry through the Docker
+daemon for the current digest of the reference the container was started with (`postgres:16-alpine`),
+once per reference and `check_interval` (24h), spread over the interval. It reports whether an update
+is available, since when, and whether the new image was already pulled but the container not recreated.
+Nothing is pulled or restarted; the rollout stays with your deployment. Compose stacks and Swarm
+services are supported; private registries get credentials in the config. Each check of a Docker Hub
+image counts as one pull.
+
+On Docker hosts with **Windows** containers (Windows Server 2022 and 2025) the same image tag runs the
+image checks only.
+
 ## Requirements
 
 - Linux **5.14 or newer** on `amd64` or `arm64` (the image is multi-arch).
@@ -67,14 +82,14 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /:/host:rslave               # project IDs are set on host directories
-      - hatchlens-data:/data        # state.json, config.yml if used
+      - hatchlens-data:/data        # state.json, images.json, config.yml if used
     ports:
       - "8080:8080"
 volumes:
   hatchlens-data:
 ```
 
-Docker volumes are measured without any config. Other directories go into the config: a file named in
+Docker volumes are measured and all containers checked without any config. Other directories go into the config: a file named in
 `HATCHLENS_CONFIG_FILE` (e.g. `/data/config.yml`) or the YAML itself in `HATCHLENS_CONFIG`, read at start:
 
 ```yaml
@@ -89,12 +104,14 @@ directories:
 Main metrics: `hatchlens_directory_bytes` and `hatchlens_directory_inodes` (labels `path`, `source`,
 `volume`, `stack`), `hatchlens_directory_info` (`owner`, `state`, `project_id`),
 `hatchlens_admin_action_needed` and `hatchlens_directory_unmeasurable` (what is missing and why; the
-log has the exact command). Endpoints: `/metrics`, `/-/healthy`, `/-/ready`.
+log has the exact command); `hatchlens_container_image_update_available` (labels `container`, `image`,
+`stack`), its `_since_timestamp_seconds` and `hatchlens_container_image_update_pulled`. Endpoints:
+`/metrics`, `/-/healthy`, `/-/ready`.
 
 ## Documentation
 
-- [Install.md](docs/Install.md): enabling project quotas per filesystem, running the container,
-  Prometheus, update, uninstall.
+- [Install.md](docs/Install.md): enabling project quotas per filesystem, running the container on Linux
+  and Windows, Prometheus, update, uninstall.
 - [Configuration.md](docs/Configuration.md): config source and every key.
 - [Metrics.md](docs/Metrics.md): all metrics, reasons and admin actions, example queries and alerts.
 - [Troubleshooting.md](docs/Troubleshooting.md): what to do when something looks wrong.

@@ -14,6 +14,8 @@ Start with `docker logs hatchlens` and the series `hatchlens_admin_action_needed
 | `/-/ready` stays 503, `reconcile_errors_total` grows | Docker socket not reachable | mount `/var/run/docker.sock`; configured directories are measured anyway once Docker answered at least once (see `docker_root_unknown`) |
 | `directory_unmeasurable{reason="quota_access_failed"}`, log `quotactl_fd ... operation not permitted` | capabilities or seccomp | add `SYS_ADMIN`; if that is not enough, try `privileged: true` |
 | `listen failed` | port in use (cAdvisor also uses 8080) | map another host port or set `global.listen_address` |
+| Windows: log `reconcile failed` with "Access is denied" | the container does not run as `ContainerAdministrator` (a `user:` in the stack overrides the image) | remove the `user:` |
+| Windows: exits with code 1, `directories: not supported on Windows` | directories are measured on Linux only | remove `directories` |
 
 ## Values look wrong
 
@@ -35,6 +37,33 @@ files that existed before the walk keep their old project ID; only their inode c
 
 **An outer directory counts less than expected.** Directories inside it that are measured on their own
 (another entry, a volume) are counted there, not in the outer one; see `hatchlens_directory_overlap`.
+
+## Image checks
+
+**A container is missing.** It is excluded (`images.exclude.containers`, `images.exclude.images` or the
+label `de.mo2000.hatchlens.enable=false`), or it is an old Swarm task (not running) or being removed;
+those are not reported. With `images.enabled: false` or an empty `docker.socket` there are no image
+metrics at all.
+
+**A container stays `pending` or shows `error`.**
+
+- `pending`: not checked yet. Checks go out one at a time, at least 10 seconds apart per registry, and a
+  registry that answered 429 is paused, so after a start with many images this takes a while.
+- `error` with `hatchlens_image_check_error`:
+  - `not_found`: the image is not in the registry, usually a locally built image. Exclude it.
+  - `denied`: a private image without credentials (add them under `images.registries`), or a Docker Hub
+    repository that does not exist (also a locally built image).
+  - `rate_limited`: the registry's pull limit; see
+    [Configuration.md](Configuration.md#docker-hub-pull-limit).
+  - `unreachable`: the daemon could not reach the registry.
+
+  Each failed check logs a `registry check failed` line with the daemon's message. A failed check is
+  retried after 5 minutes, doubling up to `check_interval`.
+
+**`update_available` is 1, but the container is up to date.** The comparison is with the digest the
+registry gives for the reference the container was created with. If the container was created from
+another tag or an image ID, `image` and `mode` show it. `pulled` 1 means the new image is already on the
+host, but the container still runs the old one: recreate it (`docker compose up -d`, stack redeploy).
 
 ## Ownership and labels
 

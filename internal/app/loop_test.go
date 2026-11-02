@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -29,7 +30,7 @@ func (r handlerRT) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func TestLoopEvents(t *testing.T) {
-	s := newServer(t, "docker: { enabled: false }\nglobal: { reconcile_interval: 5ms }")
+	s := testServer(t, "docker: { enabled: false }\nglobal: { reconcile_interval: 5ms }")
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan int)
 	go func() { done <- s.loop(ctx) }()
@@ -42,7 +43,7 @@ func TestLoopEvents(t *testing.T) {
 }
 
 func TestLoopDockerTooOld(t *testing.T) {
-	s := newServer(t, "")
+	s := testServer(t, "")
 	dc := docker.NewWithHTTP(handlerRT{http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		io.WriteString(w, `{"ApiVersion":"1.40"}`)
 	})})
@@ -53,7 +54,7 @@ func TestLoopDockerTooOld(t *testing.T) {
 }
 
 func TestWatchEventsRetries(t *testing.T) {
-	s := newServer(t, "")
+	s := testServer(t, "")
 	calls := 0
 	dc := docker.NewWithHTTP(handlerRT{http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
@@ -68,7 +69,7 @@ func TestWatchEventsRetries(t *testing.T) {
 }
 
 func TestWatchEventsCanceledInStream(t *testing.T) {
-	s := newServer(t, "")
+	s := testServer(t, "")
 	dc := docker.NewWithHTTP(handlerRT{http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		<-r.Context().Done()
 	})})
@@ -78,6 +79,9 @@ func TestWatchEventsCanceledInStream(t *testing.T) {
 }
 
 func TestMainDockerTooOld(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Docker is a named pipe on Windows")
+	}
 	dir := t.TempDir()
 	sock := filepath.Join(dir, "docker.sock")
 	l, err := net.Listen("unix", sock)
@@ -108,7 +112,7 @@ func TestMainDockerTooOld(t *testing.T) {
 }
 
 func TestWatchEventsBackoff(t *testing.T) {
-	s := newServer(t, "")
+	s := testServer(t, "")
 	calls := 0
 	dc := docker.NewWithHTTP(handlerRT{http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		// Every second stream lasts longer than the maximum and resets the backoff.

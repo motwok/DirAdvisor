@@ -18,7 +18,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
 FROM scratch
 COPY --from=build /out/hatchlens /hatchlens
 LABEL org.opencontainers.image.source="https://github.com/motwok/HatchLens" \
-      org.opencontainers.image.description="Per-directory disk usage for Prometheus, without walking the file tree." \
+      org.opencontainers.image.description="Per-directory disk usage and image update checks of all containers for Prometheus." \
       org.opencontainers.image.licenses="AGPL-3.0-or-later"
 EXPOSE 8080
 ENTRYPOINT ["/hatchlens"]

@@ -6,10 +6,8 @@ import (
 	"context"
 	"errors"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -25,7 +23,7 @@ func (r rt) RoundTrip(req *http.Request) (*http.Response, error) {
 func fake(api string) *Client {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/version", func(w http.ResponseWriter, _ *http.Request) {
-		io.WriteString(w, `{"ApiVersion":"`+api+`"}`)
+		io.WriteString(w, `{"ApiVersion":"`+api+`","MinAPIVersion":"1.12"}`)
 	})
 	mux.HandleFunc("/v1.41/info", func(w http.ResponseWriter, _ *http.Request) {
 		io.WriteString(w, `{"DockerRootDir":"/var/lib/docker"}`)
@@ -38,19 +36,31 @@ func fake(api string) *Client {
 			http.Error(w, "all missing", 400)
 			return
 		}
-		io.WriteString(w, `[{"Id":"abc","Names":["/web-1"],"State":"running","Created":5,"Mounts":[{"Type":"volume","Name":"v","RW":true}]}]`)
+		io.WriteString(w, `[{"Id":"abc","Names":["/web-1"],"ImageID":"sha256:1","State":"running","Labels":{"a":"b"},"Created":5,"Mounts":[{"Type":"volume","Name":"v","RW":true}]}]`)
 	})
 	mux.HandleFunc("/v1.41/containers/abc/json", func(w http.ResponseWriter, _ *http.Request) {
-		io.WriteString(w, `{"Id":"abc","Image":"sha256:1","Config":{"Image":"ghcr.io/motwok/hatchlens:latest"}}`)
+		io.WriteString(w, `{"Id":"abc","Image":"sha256:1","Config":{"Image":"nginx:1.29"}}`)
 	})
 	mux.HandleFunc("/v1.41/images/sha256:1/json", func(w http.ResponseWriter, _ *http.Request) {
-		io.WriteString(w, `{"RepoDigests":["ghcr.io/motwok/hatchlens@sha256:aa"]}`)
+		io.WriteString(w, `{"Id":"sha256:1","RepoDigests":["nginx@sha256:aa"]}`)
 	})
-	mux.HandleFunc("/v1.41/distribution/", func(w http.ResponseWriter, _ *http.Request) {
-		io.WriteString(w, `{"Descriptor":{"digest":"sha256:bb"}}`)
+	mux.HandleFunc("/v1.41/images/docker.io/library/nginx:1.29/json", func(w http.ResponseWriter, _ *http.Request) {
+		io.WriteString(w, `{"Id":"sha256:2"}`)
 	})
-	mux.HandleFunc("/v1.41/events", func(w http.ResponseWriter, _ *http.Request) {
-		io.WriteString(w, `{"Type":"volume","Action":"create"}`+"\n"+`{"Type":"container","Action":"exec_start"}`+"\n")
+	mux.HandleFunc("/v1.41/distribution/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1.41/distribution/docker.io/library/nginx:1.29/json" {
+			http.NotFound(w, r)
+			return
+		}
+		io.WriteString(w, `{"Descriptor":{"digest":"sha256:bb"},"auth":"`+r.Header.Get("X-Registry-Auth")+`"}`)
+	})
+	mux.HandleFunc("/v1.41/events", func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Query().Get("filters"), `"image"`) {
+			http.Error(w, "filters", 400)
+			return
+		}
+		io.WriteString(w, `{"Type":"image","Action":"pull"}`+"\n"+`{"Type":"volume","Action":"create"}`+"\n"+
+			`{"Type":"container","Action":"exec_start"}`+"\n")
 	})
 	mux.HandleFunc("/v1.41/containers/missing/json", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(404)
@@ -72,17 +82,28 @@ func TestClient(t *testing.T) {
 		t.Fatalf("volumes: %v %v", v, err)
 	}
 	cs, err := c.Containers(ctx)
-	if err != nil || len(cs) != 1 || cs[0].Name() != "web-1" || !cs[0].Mounts[0].RW {
+	if err != nil || len(cs) != 1 || cs[0].Name() != "web-1" || cs[0].ImageID != "sha256:1" || cs[0].Labels["a"] != "b" ||
+		!cs[0].Mounts[0].RW || cs[0].Created != 5 {
 		t.Fatalf("containers: %v %v", cs, err)
 	}
-	if j, err := c.Container(ctx, "abc"); err != nil || j.Config.Image != "ghcr.io/motwok/hatchlens:latest" {
+	if j, err := c.Container(ctx, "abc"); err != nil || j.Config.Image != "nginx:1.29" || j.Image != "sha256:1" {
 		t.Fatalf("container: %v %v", j, err)
 	}
-	if d, err := c.ImageRepoDigests(ctx, "sha256:1"); err != nil || d[0] != "ghcr.io/motwok/hatchlens@sha256:aa" {
-		t.Fatalf("digests: %v %v", d, err)
+	if im, err := c.Image(ctx, "sha256:1"); err != nil || im.ID != "sha256:1" || im.RepoDigests[0] != "nginx@sha256:aa" {
+		t.Fatalf("image: %v %v", im, err)
 	}
-	if d, err := c.DistributionDigest(ctx, "ghcr.io/motwok/hatchlens:latest"); err != nil || d != "sha256:bb" {
+	if im, err := c.Image(ctx, "docker.io/library/nginx:1.29"); err != nil || im.ID != "sha256:2" {
+		t.Fatalf("image by ref: %v %v", im, err)
+	}
+	if d, err := c.Distribution(ctx, "docker.io/library/nginx:1.29", ""); err != nil || d != "sha256:bb" {
 		t.Fatalf("distribution: %v %v", d, err)
+	}
+	if d, err := c.Distribution(ctx, "docker.io/library/nginx:1.29", "tok"); err != nil || d != "sha256:bb" {
+		t.Fatalf("distribution with auth: %v %v", d, err)
+	}
+	_, err = c.Distribution(ctx, "docker.io/library/x:1", "")
+	if e, ok := err.(*APIError); !ok || e.Status != 404 {
+		t.Fatalf("distribution 404: %v", err)
 	}
 	_, err = c.Container(ctx, "missing")
 	if e, ok := err.(*APIError); !ok || e.Status != 404 || !strings.Contains(e.Error(), "No such container") {
@@ -90,14 +111,60 @@ func TestClient(t *testing.T) {
 	}
 	var got []Event
 	err = c.Events(ctx, func(e Event) { got = append(got, e) })
-	if err != io.EOF || len(got) != 2 || !got[0].Relevant() || got[1].Relevant() {
+	if err != io.EOF || len(got) != 3 || !got[0].Relevant() || !got[1].Relevant() || got[2].Relevant() {
 		t.Fatalf("events: %v %v", got, err)
+	}
+}
+
+func TestAuthHeader(t *testing.T) {
+	var seen string
+	c := NewWithHTTP(rt{http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r.Header.Get("X-Registry-Auth")
+		io.WriteString(w, `{"Descriptor":{"digest":"d"}}`)
+	})})
+	c.Distribution(context.Background(), "r", "tok")
+	if seen != "tok" {
+		t.Fatalf("header %q", seen)
+	}
+	c.Distribution(context.Background(), "r", "")
+	if seen != "" {
+		t.Fatalf("header without auth %q", seen)
 	}
 }
 
 func TestOldDaemon(t *testing.T) {
 	if _, reached, err := fake("1.40").CheckVersion(context.Background()); err == nil || !reached {
 		t.Fatalf("expected version error, got %v", err)
+	}
+}
+
+// A daemon whose minimum API version is above 1.41 gets its minimum in the path.
+func TestMinAPIVersion(t *testing.T) {
+	ctx := context.Background()
+	var paths []string
+	c := NewWithHTTP(rt{http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		if r.URL.Path == "/version" {
+			io.WriteString(w, `{"ApiVersion":"1.52","MinAPIVersion":"1.44"}`)
+			return
+		}
+		io.WriteString(w, `[]`)
+	})})
+	c.Containers(ctx)
+	if v, reached, err := c.CheckVersion(ctx); err != nil || !reached || v != "1.52" {
+		t.Fatalf("version: %v %v %v", v, reached, err)
+	}
+	c.Containers(ctx)
+	c.Events(ctx, func(Event) {})
+	want := "/v1.41/containers/json /version /v1.44/containers/json /v1.44/events"
+	if got := strings.Join(paths, " "); got != want {
+		t.Fatalf("paths %q", got)
+	}
+	// A minimum at or below 1.41 keeps 1.41.
+	old := fake("1.47")
+	old.CheckVersion(ctx)
+	if old.apiVersion() != MinAPIVersion {
+		t.Fatalf("version %s", old.apiVersion())
 	}
 }
 
@@ -109,21 +176,17 @@ func TestCompareVersion(t *testing.T) {
 }
 
 func TestRelevant(t *testing.T) {
-	for _, e := range []Event{{"volume", "destroy"}, {"container", "die"}, {"container", "start"}} {
+	for _, e := range []Event{{"container", "create"}, {"container", "start"}, {"container", "stop"},
+		{"container", "die"}, {"container", "destroy"}, {"image", "pull"}, {"image", "tag"},
+		{"image", "untag"}, {"image", "delete"}, {"volume", "create"}, {"volume", "destroy"}} {
 		if !e.Relevant() {
 			t.Errorf("%v should be relevant", e)
 		}
 	}
-	for _, e := range []Event{{"volume", "mount"}, {"network", "create"}} {
+	for _, e := range []Event{{"container", "exec_start"}, {"image", "push"}, {"network", "create"}, {"volume", "mount"}} {
 		if e.Relevant() {
 			t.Errorf("%v should not be relevant", e)
 		}
-	}
-	if (Container{ID: "x", Names: []string{"/api/db", "/db"}}).Name() != "db" {
-		t.Fatal("link alias must not be the name")
-	}
-	if (Container{ID: "x", Names: []string{"/api/db"}}).Name() != "api/db" {
-		t.Fatal("only aliases: first name")
 	}
 	if (Container{ID: "x"}).Name() != "x" {
 		t.Fatal("name fallback")
@@ -137,7 +200,7 @@ func (errRT) RoundTrip(*http.Request) (*http.Response, error) { return nil, erro
 func TestErrors(t *testing.T) {
 	var nilCtx context.Context
 	c := fake("1.47")
-	if _, err := c.Info(nilCtx); err == nil {
+	if _, err := c.Containers(nilCtx); err == nil {
 		t.Error("get: bad request")
 	}
 	if _, _, err := c.CheckVersion(nilCtx); err == nil {
@@ -149,7 +212,7 @@ func TestErrors(t *testing.T) {
 
 	ctx := context.Background()
 	d := NewWithHTTP(errRT{})
-	if _, err := d.Info(ctx); err == nil {
+	if _, err := d.Containers(ctx); err == nil {
 		t.Error("get: dial")
 	}
 	if _, reached, err := d.CheckVersion(ctx); err == nil || reached {
@@ -159,20 +222,20 @@ func TestErrors(t *testing.T) {
 		t.Error("events: dial")
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+	e := NewWithHTTP(rt{http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(500)
 		io.WriteString(w, "plain failure\n")
-	})
-	e := NewWithHTTP(rt{mux})
-	if _, err := e.Info(ctx); err == nil || err.(*APIError).Message != "plain failure" {
+	})})
+	if _, err := e.Containers(ctx); err == nil || err.(*APIError).Message != "plain failure" {
 		t.Errorf("plain error: %v", err)
 	}
-	if v, reached, err := e.CheckVersion(ctx); err == nil || !reached || v != "" || err.(*APIError).Status != 500 {
-		t.Errorf("version: status 500: %v", err)
+	if _, reached, err := e.CheckVersion(ctx); err == nil || reached || err.(*APIError).Status != 500 {
+		t.Errorf("version: status: %v", err)
 	}
-	bad := NewWithHTTP(rt{http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { io.WriteString(w, "{") })})
-	if _, reached, err := bad.CheckVersion(ctx); err == nil || !reached {
+	g := NewWithHTTP(rt{http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		io.WriteString(w, "not json")
+	})})
+	if _, reached, err := g.CheckVersion(ctx); err == nil || reached {
 		t.Errorf("version: bad body: %v", err)
 	}
 	if err := e.Events(ctx, nil); err == nil || err.(*APIError).Status != 500 {
@@ -180,19 +243,25 @@ func TestErrors(t *testing.T) {
 	}
 }
 
-func TestUnixSocket(t *testing.T) {
-	sock := filepath.Join(t.TempDir(), "docker.sock")
-	l, err := net.Listen("unix", sock)
-	if err != nil {
-		t.Skipf("no unix sockets: %v", err)
+func TestNameSkipsLinkAliases(t *testing.T) {
+	for names, want := range map[string]string{
+		"/app/web,/web": "web",
+		"/web":          "web",
+		"/app/web":      "app/web",
+		"":              "id",
+	} {
+		c := Container{ID: "id"}
+		if names != "" {
+			c.Names = strings.Split(names, ",")
+		}
+		if got := c.Name(); got != want {
+			t.Errorf("%q: got %q, want %q", names, got, want)
+		}
 	}
-	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		io.WriteString(w, `{"ApiVersion":"1.47"}`)
-	}))
-	srv.Listener = l
-	srv.Start()
-	defer srv.Close()
-	if v, _, err := New(sock).CheckVersion(context.Background()); err != nil || v != "1.47" {
-		t.Fatalf("%q %v", v, err)
+}
+
+func TestIsNotFound(t *testing.T) {
+	if !IsNotFound(&APIError{Status: 404}) || IsNotFound(&APIError{Status: 500}) || IsNotFound(errors.New("x")) {
+		t.Fatal("IsNotFound")
 	}
 }

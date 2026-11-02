@@ -192,14 +192,6 @@ func TestNewDefaultsAndStateErrors(t *testing.T) {
 	}
 }
 
-func TestImageLoopRepeats(t *testing.T) {
-	e := newEnv(t)
-	e.cfg.Global.ImageUpdateCheck.Interval = config.Duration(time.Millisecond)
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
-	defer cancel()
-	e.c.RunImageCheck(ctx)
-}
-
 func TestWalkerStopsOnCancel(t *testing.T) {
 	e := newEnv(t)
 	e.volume("v", nil, nil)

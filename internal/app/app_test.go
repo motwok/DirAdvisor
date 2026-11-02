@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -46,7 +47,7 @@ func TestLogger(t *testing.T) {
 	}
 }
 
-func newServer(t *testing.T, cfgText string) *Server {
+func testServer(t *testing.T, cfgText string) *Server {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	fs := host.New("/")
 	cfg, err := config.Parse([]byte(cfgText), os.LookupEnv, nil)
@@ -54,14 +55,15 @@ func newServer(t *testing.T, cfgText string) *Server {
 		t.Fatal(err)
 	}
 	cfg.Docker.Enabled = false
-	s := &Server{Log: log, FS: fs, trigger: make(chan struct{}, 1)}
+	s := newServer(log)
+	s.FS = fs
 	s.Core = core.New(cfg, core.Options{FS: fs, StorageDir: t.TempDir(), Log: log})
 	return s
 }
 
 // A cancelled context stops the loop before the first reconcile.
 func TestLoopStopsOnCancelledContext(t *testing.T) {
-	s := newServer(t, "")
+	s := testServer(t, "")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if code := s.loop(ctx); code != 0 || s.Core.Ready() {
@@ -76,7 +78,7 @@ func get(t *testing.T, h http.Handler, method, p string) (int, string) {
 }
 
 func TestHandler(t *testing.T) {
-	s := newServer(t, "docker: { enabled: false }")
+	s := testServer(t, "docker: { enabled: false }")
 	h := s.Handler()
 	if code, _ := get(t, h, "GET", "/-/healthy"); code != 200 {
 		t.Fatal("healthy")
@@ -122,11 +124,13 @@ func TestMainExitCodes(t *testing.T) {
 	if code := Main([]string{"-config", filepath.Join(dir, "none")}, &errb); code != 1 {
 		t.Fatalf("missing file: %d", code)
 	}
-	file := filepath.Join(dir, "file")
-	os.WriteFile(file, nil, 0o644)
-	t.Setenv("HATCHLENS_CONFIG", "{ global: { rootfs: / }, directories: [ { path: '"+file+"' } ] }")
-	if code := Main(nil, &errb); code != 1 || !strings.Contains(errb.String(), "not a directory") {
-		t.Fatalf("not a directory: %d", code)
+	if runtime.GOOS != "windows" {
+		file := filepath.Join(dir, "file")
+		os.WriteFile(file, nil, 0o644)
+		t.Setenv("HATCHLENS_CONFIG", "{ global: { rootfs: / }, directories: [ { path: '"+file+"' } ] }")
+		if code := Main(nil, &errb); code != 1 || !strings.Contains(errb.String(), "not a directory") {
+			t.Fatalf("not a directory: %d", code)
+		}
 	}
 	t.Setenv("HATCHLENS_CONFIG", "{ global: { listen_address: '256.0.0.1:1', storage_path: '"+dir+"' }, docker: { socket: '' } }")
 	if code := Main(nil, &errb); code != 1 || !strings.Contains(errb.String(), "listen failed") {
@@ -135,7 +139,7 @@ func TestMainExitCodes(t *testing.T) {
 }
 
 func TestPoke(t *testing.T) {
-	s := newServer(t, "")
+	s := testServer(t, "")
 	s.poke()
 	s.poke()
 	if len(s.trigger) != 1 {

@@ -1,5 +1,6 @@
 # Build output
 /hatchlens
+/hatchlens.exe
 /dist/
 
 # Go test and coverage output

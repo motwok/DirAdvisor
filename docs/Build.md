@@ -5,14 +5,17 @@
 | Path | Content |
 |---|---|
 | `cmd/hatchlens` | `main` |
-| `internal/app` | flags, HTTP endpoints, signals, main loop |
-| `internal/core` | discovery, ownership, labels, project IDs, walks, metrics |
+| `internal/app` | flags, HTTP endpoints, signals, main loops |
+| `internal/core` | directories: discovery, ownership, labels, project IDs, walks, metrics |
+| `internal/images` | image checks: reconcile, registry checks, comparison, metrics |
+| `internal/images/state` | `images.json` |
 | `internal/config` | config source, environment variables, globs |
-| `internal/docker` | read-only Docker API client |
+| `internal/docker` | read-only Docker API client (Unix socket, Windows named pipe) |
 | `internal/host` | Linux: mounts, `quotactl_fd`, project ID ioctls, walks, ZFS |
+| `internal/ref` | image reference parsing and normalization |
 | `internal/state` | `state.json` |
 | `internal/metrics` | Prometheus text format |
-| `tests/integration` | integration test |
+| `tests/integration` | integration tests |
 
 Unit tests sit next to the code (`*_test.go`). The only dependency is `go.yaml.in/yaml/v3`.
 
@@ -26,8 +29,16 @@ GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build ./cmd/hatchlens
 docker build -t hatchlens:dev .
 ```
 
-The image is `FROM scratch` with one static binary. `--build-arg VERSION=... REVISION=... BUILD_TIME=...`
-set what `hatchlens_build_info` reports.
+The Linux image is `FROM scratch` with one static binary. `--build-arg VERSION=... REVISION=...
+BUILD_TIME=...` set what `hatchlens_build_info` reports.
+
+The Windows image (image checks only) copies a binary built before onto nanoserver (no `RUN`), so it
+builds on Windows and with buildx on Linux alike:
+
+```bash
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o dist/hatchlens.exe ./cmd/hatchlens
+docker build -f Dockerfile.windows --build-arg OSVERSION=ltsc2022 -t hatchlens:dev .
+```
 
 ## Unit tests
 
@@ -37,13 +48,14 @@ go vet ./...
 go test -race ./...
 ```
 
-The Linux system calls are not unit tested; on other systems `internal/host` has a stub. They are
-covered by the integration test.
+CI runs them on Linux and on Windows (without `-race`), so the Windows code is covered too. The Linux
+system calls are not unit tested; on other systems `internal/host` has a stub. They are covered by the
+integration test.
 
-## Integration test
+## Integration tests
 
-`tests/integration/run.sh IMAGE COVERDIR` creates loop devices with ext4 (project quota), XFS
-(`prjquota`), a ZFS pool and ext4 without quota, Docker volumes and containers on them, and runs the
+`tests/integration/run.sh IMAGE COVERDIR` (directories) creates loop devices with ext4 (project quota),
+XFS (`prjquota`), a ZFS pool and ext4 without quota, Docker volumes and containers on them, and runs the
 image with exactly the documented capabilities. It needs root, Docker, `xfsprogs`, `zfsutils-linux` and
 `e2fsprogs`, and it changes the machine (mounts, a pool, containers), so run it only in CI or a
 throw-away VM:
@@ -53,9 +65,25 @@ docker build --build-arg COVER=1 -t hatchlens:test .
 sudo tests/integration/run.sh hatchlens:test "$PWD/cover-integration"
 ```
 
+`tests/integration/run-images.sh IMAGE COVERDIR STORE` (image checks) starts a `docker:dind` engine with
+the `classic` or the `containerd` image store and runs everything inside it: a local `registry:2`, a
+fake registry answering 429, test images copied from Docker Hub's `busybox`, a Swarm stack, and the
+image under test. It checks the comparison end to end (newer image pushed, pulled, container recreated),
+pinned and local containers, excludes, a registry mirror, Swarm task updates, the rate limit backoff, a
+restart with the state and the endpoints. It needs Docker with `--privileged` and access to Docker Hub:
+
+```bash
+tests/integration/run-images.sh hatchlens:test "$PWD/cover-images" classic
+tests/integration/run-images.sh hatchlens:test "$PWD/cover-images" containerd
+```
+
+`tests/integration/run-windows.ps1 IMAGE COVERDIR LTSC` runs the Windows image on a Windows Server host
+with the pipe mounted and checks that a `mcr.microsoft.com/windows/nanoserver` container is reported as
+`checked`.
+
 ## Coverage
 
-CI merges the unit and the integration coverage:
+CI merges the unit and the integration coverage of Linux and Windows:
 
 ```bash
 go test -covermode=atomic -coverpkg=./... -cover ./... -args -test.gocoverdir="$PWD/cover-unit"
@@ -64,9 +92,12 @@ go tool covdata textfmt -i=cover-unit,cover-integration -o cover.txt
 go tool cover -html=cover.txt -o coverage.html
 ```
 
-The image built with `COVER=1` writes its counters to `GOCOVERDIR` on exit.
+The image built with `COVER=1` (Linux) or from a binary built with `go build -cover` (Windows) writes
+its counters to `GOCOVERDIR` on exit. Below 99% the `Coverage` check fails.
 
 ## CI
 
-`.github/workflows/build.yml` runs unit tests, the integration test on `amd64` and `arm64` runners and
-the coverage report on every PR; on `master` it also releases. See [RELEASING.md](../RELEASING.md).
+`.github/workflows/build.yml` runs on every PR: unit tests on Linux and Windows, the directory
+integration test on `amd64` and `arm64` runners, the image integration test on both runners with both
+image stores, the Windows integration test on `windows-2022` and `windows-2025`, and the coverage
+report; on `master` it also releases. See [RELEASING.md](../RELEASING.md).

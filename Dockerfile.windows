@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Windows variant, image checks only. dist/hatchlens.exe is built before (see docs/Build.md);
+# no RUN, so buildx on Linux can build it too.
+ARG OSVERSION=ltsc2022
+FROM mcr.microsoft.com/windows/nanoserver:${OSVERSION}
+COPY dist/hatchlens.exe /hatchlens.exe
+# The Docker engine pipe is open to administrators only.
+USER ContainerAdministrator
+LABEL org.opencontainers.image.source="https://github.com/motwok/HatchLens" \
+      org.opencontainers.image.description="Per-directory disk usage and image update checks of all containers for Prometheus." \
+      org.opencontainers.image.licenses="AGPL-3.0-or-later"
+EXPOSE 8080
+ENTRYPOINT ["C:\\hatchlens.exe"]
