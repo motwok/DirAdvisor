@@ -5,6 +5,7 @@ package winhost
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -272,8 +273,21 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, "hatchlens-host", Version)
 		return 0
 	}
+	if len(args) > 0 && args[0] == "enable-quota" {
+		fs := flag.NewFlagSet("enable-quota", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		vhd := fs.String("vhd", "", `data disk of Docker Desktop (default: found under %LOCALAPPDATA%\Docker\wsl)`)
+		if fs.Parse(args[1:]) != nil || fs.NArg() > 0 {
+			return 2
+		}
+		if err := EnableQuota(*vhd, stdout); err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		return 0
+	}
 	if len(args) > 0 {
-		fmt.Fprintln(stderr, "usage: hatchlens-host [version]")
+		fmt.Fprintln(stderr, "usage: hatchlens-host [version | enable-quota [-vhd PATH]]")
 		return 2
 	}
 	inService, err := isService()

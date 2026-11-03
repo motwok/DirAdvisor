@@ -154,6 +154,7 @@ type fakeDocker struct {
 	api        string
 	down       bool
 	root       string
+	os         string
 	volumes    []docker.Volume
 	containers []docker.Container
 	versionErr error
@@ -187,7 +188,7 @@ func (d *fakeDocker) Info(context.Context) (docker.Info, error) {
 	if d.infoErr != nil {
 		return docker.Info{}, d.infoErr
 	}
-	return docker.Info{DockerRootDir: d.root}, nil
+	return docker.Info{DockerRootDir: d.root, OperatingSystem: d.os}, nil
 }
 func (d *fakeDocker) Volumes(context.Context) ([]docker.Volume, error) {
 	if d.down {

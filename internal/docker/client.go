@@ -23,7 +23,8 @@ import (
 const MinAPIVersion = "1.41"
 
 type Info struct {
-	DockerRootDir string `json:"DockerRootDir"`
+	DockerRootDir   string `json:"DockerRootDir"`
+	OperatingSystem string `json:"OperatingSystem"`
 }
 
 type Volume struct {

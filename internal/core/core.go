@@ -63,6 +63,8 @@ type Core struct {
 
 	versionOK  bool
 	dockerRoot string
+	// desktop: Docker Desktop, whose data disk only enable-quota can change.
+	desktop bool
 	// rootKnown is false while Docker is enabled but its root directory was
 	// never seen; configured directories wait, so no walk can enter it.
 	rootKnown  bool

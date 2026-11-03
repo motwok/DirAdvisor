@@ -17,6 +17,13 @@ HatchLens is written in Go. The binary contains:
 - on Windows: golang.org/x/sys, BSD-3-Clause license, Copyright The Go
   Authors, and go-winio (named pipes), MIT license, Copyright Microsoft.
 
+The HatchLens Host MSI contains hatchlens-wsl.tar, the root file system of a
+temporary WSL distribution used by "hatchlens-host enable-quota": unmodified
+packages of Alpine Linux 3.22 (among them BusyBox, musl, apk-tools and
+e2fsprogs) under their own licenses, mostly GPL-2.0 and MIT, each listed in
+/lib/apk/db/installed of the tar. Their source code is available from the
+Alpine Linux project and, on request, from the maintainer.
+
 The Linux container image is built FROM scratch and contains only the
 HatchLens binary. The Windows image adds the binary to Microsoft's
 nanoserver base image, which is under Microsoft's own license terms.

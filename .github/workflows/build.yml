@@ -111,6 +111,18 @@ jobs:
           path: cover-images
           if-no-files-found: ignore
 
+  wsl-rootfs:
+    name: WSL root file system
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build
+        run: docker buildx build -o type=tar,dest=hatchlens-wsl.tar packaging/wsl
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wsl-rootfs
+          path: hatchlens-wsl.tar
+
   integration-windows:
     name: Integration (windows, ${{ matrix.ltsc }})
     strategy:
@@ -121,9 +133,14 @@ jobs:
             runner: windows-2022
           - ltsc: ltsc2025
             runner: windows-2025
+    needs: [wsl-rootfs]
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: wsl-rootfs
+          path: dist
       - name: Go version from the Dockerfile
         id: go
         shell: bash
@@ -161,7 +178,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
           dotnet tool install --global wix --version 5.0.2
           if ($LASTEXITCODE -ne 0) { exit 1 }
-          wix build packaging/windows/hatchlens-host.wxs -arch x64 -d Version=0.0.1 -d Exe=dist/hatchlens-host.exe -o dist/hatchlens-host.msi
+          wix build packaging/windows/hatchlens-host.wxs -arch x64 -d Version=0.0.1 -d Exe=dist/hatchlens-host.exe -d Rootfs=dist/hatchlens-wsl.tar -o dist/hatchlens-host.msi
           if ($LASTEXITCODE -ne 0) { exit 1 }
           go build -trimpath -o dist/hatchlens-svc.exe ./cmd/hatchlens
           if ($LASTEXITCODE -ne 0) { exit 1 }
@@ -380,13 +397,17 @@ jobs:
 
   msi:
     name: Release MSI
-    needs: [release]
+    needs: [release, wsl-rootfs]
     if: needs.release.outputs.released == 'true'
     runs-on: windows-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: wsl-rootfs
+          path: dist
       - name: Go version from the Dockerfile
         id: go
         shell: bash
@@ -411,7 +432,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
           foreach ($p in @(@('hatchlens-host', 'dist/hatchlens-host.exe'), @('hatchlens', 'dist/hatchlens.exe'))) {
             $msi = "dist/$($p[0])-$env:VERSION.msi"
-            wix build "packaging/windows/$($p[0]).wxs" -arch x64 -d "Version=$env:VERSION" -d "Exe=$($p[1])" -o $msi
+            wix build "packaging/windows/$($p[0]).wxs" -arch x64 -d "Version=$env:VERSION" -d "Exe=$($p[1])" -d Rootfs=dist/hatchlens-wsl.tar -o $msi
             if ($LASTEXITCODE -ne 0) { exit 1 }
             gh release upload "v$env:VERSION" $msi --clobber
             if ($LASTEXITCODE -ne 0) { exit 1 }

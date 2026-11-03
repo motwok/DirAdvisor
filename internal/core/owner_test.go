@@ -140,7 +140,7 @@ func TestCommands(t *testing.T) {
 		"filesystem_not_supported":    "ext4, XFS or ZFS",
 		"other":                       "",
 	} {
-		if got := command(reason, m, "/srv/x", false); !strings.Contains(got, want) {
+		if got := command(reason, m, "/srv/x", false, false); !strings.Contains(got, want) {
 			t.Errorf("%s: %q", reason, got)
 		}
 	}
@@ -150,7 +150,7 @@ func TestCommands(t *testing.T) {
 		"install_host_service":     `\\.\pipe\hatchlens-host`,
 		"enable_usn_journal":       "fsutil usn createjournal",
 	} {
-		if got := command(reason, win, "/C:/data", false); !strings.Contains(got, want) {
+		if got := command(reason, win, "/C:/data", false, false); !strings.Contains(got, want) {
 			t.Errorf("%s: %q", reason, got)
 		}
 	}
@@ -173,7 +173,7 @@ func TestCommandSteps(t *testing.T) {
 			"systemctl stop docker", "umount /srv && mount /srv", "remount is not enough", "start Docker again"}},
 		{"mount_with_prjquota", hostMount("/", "xfs", "/dev/sda1"), false, []string{"rootflags=prjquota", "reboot"}},
 	} {
-		got := command(c.reason, c.m, "/x", c.docker)
+		got := command(c.reason, c.m, "/x", c.docker, false)
 		for _, w := range c.want {
 			if !strings.Contains(got, w) {
 				t.Errorf("%s %s: %q lacks %q", c.reason, c.m.Point, got, w)

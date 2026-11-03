@@ -73,6 +73,17 @@ func TestActionsDeduplicatedAndThrottled(t *testing.T) {
 	}
 }
 
+func TestDockerDesktopAction(t *testing.T) {
+	e := newEnv(t)
+	e.volume("a", nil, nil)
+	e.dk.os = "Docker Desktop"
+	e.fs.status["/"] = host.EnableProjectQuotaFeature
+	e.reconcile()
+	if len(e.c.view.actions) != 1 || !strings.Contains(e.c.view.actions[0].Command, "hatchlens-host enable-quota") {
+		t.Fatalf("actions %+v", e.c.view.actions)
+	}
+}
+
 func TestOwnerWorkingDirAndLastState(t *testing.T) {
 	e := newEnv(t)
 	e.volume("v", nil, nil)

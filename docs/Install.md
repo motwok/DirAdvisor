@@ -16,7 +16,8 @@ by default (see [Configuration.md](Configuration.md#image-checks)). For Windows 
 - The data to measure on ext4, XFS or ZFS (OpenZFS 0.8+) with project quotas enabled (next section).
 
 HatchLens never changes your filesystems, mounts or pools. It only sets project IDs on the directories
-it measures. Whatever is missing it reports as `hatchlens_admin_action_needed` and in the log, with the
+it measures. The one exception is a command an administrator runs by hand for Docker Desktop
+([`hatchlens-host enable-quota`](#docker-desktop)). Whatever is missing it reports as `hatchlens_admin_action_needed` and in the log, with the
 exact command for your host.
 
 ## 1. Enable project quotas
@@ -248,6 +249,36 @@ msiexec /i hatchlens-X.Y.Z.msi /qn
   -LocalPort 8080 -Action Allow`.
 - Updating: install the newer MSI; removing: `msiexec /x hatchlens-X.Y.Z.msi /qn` (config and state in
   `%ProgramData%\HatchLens` stay).
+
+## Docker Desktop
+
+Docker Desktop on Windows 10 and 11 runs Windows or Linux containers; HatchLens works in both modes.
+
+**Windows containers:** as on Windows Server ([Windows](#windows)), with the HatchLens Host service.
+With Hyper-V isolation, the default on Windows 10 and 11, the memory values are those of the
+container's utility VM.
+
+**Linux containers:** the Linux image as in [Run the container](#2-run-the-container). Image checks,
+container usage and traffic per Docker network work as on Linux. The differences:
+
+- Mount the host root without `rslave` (`- /:/host`); Docker Desktop refuses it.
+- Docker volumes live on the ext4 data disk of Docker Desktop, which has no project quota feature
+  (admin action `enable_project_quota_feature`). The HatchLens Host MSI brings a command that enables
+  it, once, as administrator:
+
+  ```powershell
+  # quit Docker Desktop first
+  wsl --shutdown
+  & "$env:ProgramFiles\HatchLens\hatchlens-host.exe" enable-quota
+  ```
+
+  It attaches the data disk (`%LOCALAPPDATA%\Docker\wsl\data\ext4.vhdx`, in newer versions
+  `%LOCALAPPDATA%\Docker\wsl\disk\docker_data.vhdx`; `-vhd PATH` for another one) to a temporary WSL
+  distribution with e2fsprogs, checks it with `e2fsck -f -p`, runs `tune2fs -O project,quota` and
+  removes the distribution again. Then start Docker Desktop. A copy of the disk beforehand does no
+  harm. A reset of Docker Desktop ("Clean / Purge data", "Reset to factory defaults") creates a new
+  disk without the feature; the admin action shows up again.
+- Directories on Windows drives (bind mounts of `C:\...`) cannot be measured in this mode.
 
 ## Update and rollback
 

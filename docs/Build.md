@@ -19,6 +19,7 @@
 | `internal/state` | `state.json` |
 | `internal/metrics` | Prometheus text format |
 | `packaging/windows` | WiX sources of the two MSIs |
+| `packaging/wsl` | root file system of the WSL distribution of `hatchlens-host enable-quota` |
 | `tests/integration` | integration tests |
 
 Unit tests sit next to the code (`*_test.go`). Dependencies: `go.yaml.in/yaml/v3`, and on Windows
@@ -52,7 +53,8 @@ Windows with WiX 5:
 $env:CGO_ENABLED = '0'
 go build -trimpath -ldflags "-X github.com/motwok/HatchLens/internal/winhost.Version=0.0.1" -o dist/hatchlens-host.exe ./cmd/hatchlens-host
 dotnet tool install --global wix --version 5.0.2
-wix build packaging/windows/hatchlens-host.wxs -arch x64 -d Version=0.0.1 -d Exe=dist/hatchlens-host.exe -o dist/hatchlens-host.msi
+docker buildx build -o type=tar,dest=dist/hatchlens-wsl.tar packaging/wsl   # on a Linux Docker
+wix build packaging/windows/hatchlens-host.wxs -arch x64 -d Version=0.0.1 -d Exe=dist/hatchlens-host.exe -d Rootfs=dist/hatchlens-wsl.tar -o dist/hatchlens-host.msi
 ```
 
 HatchLens itself as a Windows service, from the same `hatchlens.exe` as in the image:
@@ -64,6 +66,10 @@ wix build packaging/windows/hatchlens.wxs -arch x64 -d Version=0.0.1 -d Exe=dist
 
 Started by the service control manager it runs as the service `HatchLens` with the host part in the
 same process; started any other way (also in the container) it behaves as before.
+
+`hatchlens-host enable-quota` runs `tune2fs` on the Docker Desktop data disk in a temporary WSL
+distribution ([Install.md](Install.md#docker-desktop)); its unit tests replace `wsl.exe`, the CI runners
+have no WSL 2.
 
 `hatchlens-host version` prints the version; without arguments it serves in the foreground until
 Ctrl+C (as administrator), under the service control manager as the service.

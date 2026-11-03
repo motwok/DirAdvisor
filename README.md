@@ -88,7 +88,8 @@ itself as a Windows service on the host, everything in one process, from its own
 
 - Linux **5.14 or newer** on `amd64` or `arm64` (the image is multi-arch).
 - The measured directories on a filesystem with project quotas enabled. This is a one-time step for the
-  admin; HatchLens never does it itself, it only sets project IDs:
+  admin; HatchLens never does it itself, it only sets project IDs (for Docker Desktop there is a command
+  for it, see [Install.md](docs/Install.md#docker-desktop)):
   - **ext4:** `tune2fs -O project,quota <device>` on the unmounted filesystem;
   - **XFS:** mount with the `prjquota` option;
   - **ZFS** (OpenZFS 0.8+): `zpool set feature@project_quota=enabled <pool>`, and the ZFS tools
@@ -101,6 +102,8 @@ itself as a Windows service on the host, everything in one process, from its own
 - **Windows:** Windows Server 2022 or 2025 with Docker and Windows containers. Volumes and directories
   on NTFS with a USN journal need the HatchLens Host service (MSI) or HatchLens itself as a service;
   see [Install.md](docs/Install.md#windows).
+- **Docker Desktop** on Windows 10/11 works with Linux and with Windows containers; see
+  [Install.md](docs/Install.md#docker-desktop).
 
 ## Quick start
 

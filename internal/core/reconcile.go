@@ -46,6 +46,7 @@ type candidate struct {
 type snapshot struct {
 	ok         bool
 	root       string
+	desktop    bool
 	volumes    []docker.Volume
 	containers []docker.Container
 	// excluded are the IDs of containers excluded by exclude.containers,
@@ -97,7 +98,7 @@ func (c *Core) readDocker(ctx context.Context, cfg *config.Config) (snapshot, er
 	if root == "" {
 		root = defaultDockerRoot
 	}
-	return snapshot{ok: true, root: path.Clean(config.Host(root)), volumes: vols, containers: cs, excluded: excluded}, nil
+	return snapshot{ok: true, root: path.Clean(config.Host(root)), desktop: strings.HasPrefix(info.OperatingSystem, "Docker Desktop"), volumes: vols, containers: cs, excluded: excluded}, nil
 }
 
 // excludedContainers applies the container excludes. The reference as written
@@ -164,6 +165,7 @@ func (c *Core) Reconcile(ctx context.Context) error {
 	}
 	if snap.ok {
 		c.dockerRoot, c.st.DockerRoot = snap.root, snap.root
+		c.desktop = snap.desktop
 	}
 	root := c.dockerRoot
 	c.rootKnown = !cfg.Enabled(config.FnVolume) || c.dk == nil || root != ""
@@ -227,7 +229,7 @@ func (c *Core) Reconcile(ctx context.Context) error {
 			v.unmeas = append(v.unmeas, unmeasurable{cd.path, sr.reason})
 			if host.AdminAction(sr.reason) {
 				docker := cd.source == state.SourceVolume || m.Point == dockerMount
-				v.addAction(adminAction{m.Point, m.FSType, sr.reason, command(sr.reason, m, cd.path, docker)})
+				v.addAction(adminAction{m.Point, m.FSType, sr.reason, command(sr.reason, m, cd.path, docker, docker && c.desktop)})
 			}
 			continue
 		}
@@ -638,7 +640,10 @@ func (c *Core) setResetTargets(es []entryView) {
 
 // command is the step the admin has to do, filled in for the host. docker is
 // set when Docker keeps data on the mount and has to be stopped first.
-func command(reason string, m host.Mount, p string, docker bool) string {
+func command(reason string, m host.Mount, p string, docker, desktop bool) string {
+	if desktop && reason == host.EnableProjectQuotaFeature {
+		return "quit Docker Desktop, run wsl --shutdown, run as administrator: hatchlens-host enable-quota (HatchLens Host MSI of the release), start Docker Desktop again"
+	}
 	stop, start := fmt.Sprintf("stop everything using %s", m.Point), "start it again"
 	if docker {
 		stop = fmt.Sprintf("stop Docker (systemctl stop docker docker.socket containerd) and everything else using %s", m.Point)

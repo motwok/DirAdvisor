@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
-<!-- HatchLens Host service. Build: wix build -arch x64 -d Version=X.Y.Z -d Exe=hatchlens-host.exe -->
+<!-- HatchLens Host service. Build: wix build -arch x64 -d Version=X.Y.Z -d Exe=hatchlens-host.exe
+     -d Rootfs=hatchlens-wsl.tar (packaging/wsl, used by hatchlens-host enable-quota) -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="HatchLens Host" Manufacturer="Emmo Emminghaus" Version="$(Version)"
            UpgradeCode="F3D0F8B3-9EC1-455C-9E85-F978AF4B9ECF" Scope="perMachine" Compressed="yes">
@@ -17,10 +18,14 @@
           <ServiceControl Id="HostServiceControl" Name="HatchLensHost" Start="install" Stop="both"
                           Remove="uninstall" Wait="yes" />
         </Component>
+        <Component Id="WslRootfs">
+          <File Id="Rootfs" Source="$(Rootfs)" Name="hatchlens-wsl.tar" KeyPath="yes" />
+        </Component>
       </Directory>
     </StandardDirectory>
     <Feature Id="Main">
       <ComponentRef Id="HostService" />
+      <ComponentRef Id="WslRootfs" />
     </Feature>
   </Package>
 </Wix>
