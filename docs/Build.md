@@ -33,13 +33,26 @@ docker build -t hatchlens:dev .
 The Linux image is `FROM scratch` with one static binary. `--build-arg VERSION=... REVISION=...
 BUILD_TIME=...` set what `hatchlens_build_info` reports.
 
-The Windows image (image checks only) copies a binary built before onto nanoserver (no `RUN`), so it
-builds on Windows and with buildx on Linux alike:
+The Windows image copies a binary built before onto nanoserver (no `RUN`), so it builds on Windows and
+with buildx on Linux alike:
 
 ```bash
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o dist/hatchlens.exe ./cmd/hatchlens
 docker build -f Dockerfile.windows --build-arg OSVERSION=ltsc2022 -t hatchlens:dev .
 ```
+
+The HatchLens Host service (`cmd/hatchlens-host`, package `internal/winhost`) and its MSI, built on
+Windows with WiX 5:
+
+```powershell
+$env:CGO_ENABLED = '0'
+go build -trimpath -ldflags "-X github.com/motwok/HatchLens/internal/winhost.Version=0.0.1" -o dist/hatchlens-host.exe ./cmd/hatchlens-host
+dotnet tool install --global wix --version 5.0.2
+wix build packaging/windows/hatchlens-host.wxs -arch x64 -d Version=0.0.1 -d Exe=dist/hatchlens-host.exe -o dist/hatchlens-host.msi
+```
+
+`hatchlens-host version` prints the version; without arguments it serves in the foreground until
+Ctrl+C (as administrator), under the service control manager as the service.
 
 ## Unit tests
 
@@ -78,9 +91,11 @@ tests/integration/run-images.sh hatchlens:test "$PWD/cover-images" classic
 tests/integration/run-images.sh hatchlens:test "$PWD/cover-images" containerd
 ```
 
-`tests/integration/run-windows.ps1 IMAGE COVERDIR LTSC` runs the Windows image on a Windows Server host
-with the pipe mounted and checks that a `mcr.microsoft.com/windows/nanoserver` container is reported as
-`checked`.
+`tests/integration/run-windows.ps1 IMAGE COVERDIR LTSC MSI HOSTEXE` runs the Windows image on a Windows
+Server host: first without the host service (image checks, container usage, admin action
+`install_host_service`), then with the MSI installed (volume and directory sizes and their growth,
+traffic per Docker network on two `nat` networks), and uninstalls the MSI. The service's unit tests open
+the volume and read its USN journal; they need administrator rights, which the CI runners have.
 
 ## Coverage
 

@@ -114,7 +114,7 @@ $before = Value 'hatchlens_directory_bytes\{.*source="volume".*volume="vol1"'
 WaitFor 60 'volume growth' { (Value 'hatchlens_directory_bytes\{.*source="volume".*volume="vol1"') -ge $before + 5000000 }
 
 Step 'network per Docker network'
-Invoke-Docker network create -d nat --subnet 172.30.0.0/16 net2 | Out-Null
+Invoke-Docker network create -d nat net2 | Out-Null
 Invoke-Docker create --name busy2 --network nat $nano ping -t 127.0.0.1 | Out-Null
 Invoke-Docker network connect net2 busy2
 Invoke-Docker start busy2 | Out-Null
