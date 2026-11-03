@@ -13,7 +13,7 @@ Start with `docker logs hatchlens` and the series `hatchlens_admin_action_needed
 | exits with code 2 | unknown flag or value | check the command line |
 | `/-/ready` stays 503, `reconcile_errors_total` grows | Docker socket not reachable | mount `/var/run/docker.sock`; configured directories are measured anyway once Docker answered at least once (see `docker_root_unknown`) |
 | `directory_unmeasurable{reason="quota_access_failed"}`, log `quotactl_fd ... operation not permitted` | capabilities or seccomp | add `SYS_ADMIN`; if that is not enough, try `privileged: true` |
-| `listen failed` | port in use (cAdvisor also uses 8080) | map another host port or set `listen_address` |
+| `listen failed` | port in use | map another host port or set `listen_address` |
 | Windows: log `reconcile failed` with "Access is denied" | the container does not run as `ContainerAdministrator` (a `user:` in the stack overrides the image) | remove the `user:` |
 | Windows: exits with code 1, `host_socket is empty` | `directory` or `volume` runs without the host service | set `host_socket` or add them to `disable` |
 | Windows: admin action `install_host_service` | the HatchLens Host service is not installed, not running or its pipe is not mounted | install the MSI, check `Get-Service HatchLensHost`, mount `\\.\pipe\hatchlens-host` |

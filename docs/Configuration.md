@@ -180,7 +180,7 @@ that are empty are left out. Every additional label adds series, so keep the all
 
 ### Ownership
 
-- The owner is a container that mounts the volume read-write; its name is the same as cAdvisor's `name`
+- The owner is a container that mounts the volume read-write; its name is the `owner`
   label. With several writers the first one stays the owner.
 - `stack` is the Compose project in the volume's own label; for volumes without one, the project of the
   writers. Volumes written by several stacks without such a label count as `unused`.
