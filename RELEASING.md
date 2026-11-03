@@ -73,10 +73,11 @@ That is how security fixes in Go and its standard library reach you within a few
 
 What limits that risk:
 
-- HatchLens has a single dependency besides the Go standard library (the YAML parser go-yaml).
+- HatchLens has three dependencies besides the Go standard library: the YAML parser go-yaml and, for
+  Windows only, `golang.org/x/sys` (from the Go authors) and go-winio (from Microsoft).
 - `go.sum` pins every module and is checked against the Go checksum database.
 - Dependabot waits **3 days** after a new version appears before proposing it (cooldown), so a
-  compromised release that is found and pulled quickly never reaches HatchLens. For go-yaml, security
+  compromised release that is found and pulled quickly never reaches HatchLens. For the modules, security
   updates with an advisory are not delayed; Go itself arrives as a base image update and always waits
   the 3 days.
 - The `golang` build image is pinned in the `Dockerfile` and only changes through a reviewed-by-CI pull
@@ -93,9 +94,9 @@ Version tags are never rebuilt. Pin the deployment to the version tag of an earl
 
 ## Deployment
 
-HatchLens only publishes images and the MSI. Pulling `:latest` and redeploying the container is up to the
-deployment, for example a scheduled stack redeploy. No credentials are needed: the repository and the
-image are public.
+HatchLens only publishes images and the two MSIs. Pulling `:latest` and redeploying the container is up
+to the deployment, for example a scheduled stack redeploy; a newer MSI is installed by the admin. No
+credentials are needed: the repository and the image are public.
 
 HatchLens reports its own container like every other one in the image update checks, so you notice a
 stuck redeploy of HatchLens itself too.

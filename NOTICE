@@ -13,7 +13,10 @@ Third-party components
 HatchLens is written in Go. The binary contains:
 
 - the Go standard library, BSD-3-Clause license, Copyright The Go Authors;
-- go-yaml, the YAML parser, MIT and Apache-2.0 licenses, see its repository.
+- go-yaml, the YAML parser, MIT and Apache-2.0 licenses, see its repository;
+- on Windows: golang.org/x/sys, BSD-3-Clause license, Copyright The Go
+  Authors, and go-winio (named pipes), MIT license, Copyright Microsoft.
 
-The container image is built FROM scratch and contains only the HatchLens
-binary.
+The Linux container image is built FROM scratch and contains only the
+HatchLens binary. The Windows image adds the binary to Microsoft's
+nanoserver base image, which is under Microsoft's own license terms.
