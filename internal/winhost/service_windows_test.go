@@ -211,6 +211,9 @@ func TestMain(t *testing.T) {
 	}
 	dir := t.TempDir()
 	logDir = func() string { return dir }
+	if DataDir() != dir {
+		t.Fatal("DataDir")
+	}
 	isService = func() (bool, error) { return true, nil }
 	runService = func(string, svc.Handler) error { return nil }
 	if Main(nil, &out, &errb) != 0 {
