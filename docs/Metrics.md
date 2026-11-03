@@ -47,7 +47,7 @@ All metrics have the prefix `hatchlens_`; all are gauges except `reconcile_error
 
 | Reason / action | Meaning | Fix |
 |---|---|---|
-| `enable_project_quota_feature` | ext4 without project quota | `tune2fs -O project,quota`, see [Install.md](Install.md#ext4) |
+| `enable_project_quota_feature` | ext4 without project quota | `tune2fs -O project,quota`, see [Install.md](Install.md#ext4); Docker Desktop: `hatchlens-host enable-quota`, see [Install.md](Install.md#docker-desktop) |
 | `mount_with_prjquota` | XFS mounted without `prjquota` | mount option, see [Install.md](Install.md#xfs) |
 | `enable_zfs_project_quota` | pool feature off | `zpool set feature@project_quota=enabled <pool>` |
 | `install_zfs_userland` | no `zfs`/`zpool` on the host | install the ZFS tools |
