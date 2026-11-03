@@ -22,7 +22,8 @@ runs, and how much CPU, memory, disk I/O and network traffic it uses, per Docker
 
 ## Why
 
-- cAdvisor only reports a container's writable layer, not its volumes.
+- cAdvisor reports only a container's writable layer, not its volumes, and does not run on Windows hosts.
+  HatchLens replaces it: CPU, memory, disk and network per container on Linux and Windows alike.
 - node_exporter and windows_exporter report whole filesystems, not directories.
 - Tools based on `du` have to touch every file on every run. On spinning disks with many small files that
   is slow and costly, so they can only run rarely.
@@ -54,7 +55,7 @@ directories from one walk plus the USN journal and maps the network traffic to D
   right away. Anything else, including bind-mounted directories, is added in a configuration file, with
   glob patterns and labels.
 - **Ownership:** the container that mounts a volume read-write is its owner (`owner` is the container
-  name, as in cAdvisor's `name` label). The owner's Compose project becomes the `stack` label.
+  name). The owner's Compose project becomes the `stack` label.
   Assignments are remembered, so volumes of a stack that is shut down stay with that stack.
 - **Project IDs:** HatchLens assigns and maintains the project IDs itself, including for new volumes.
 - **Metrics:** usage is read from the kernel at scrape time.
@@ -74,7 +75,7 @@ image counts as one pull.
 For every running container: CPU time, CPU and memory limits, memory use and working set, OOM kills,
 bytes and operations read and written, and network traffic per interface, labelled with the Docker
 network it belongs to. On Linux the counters come straight from the host's cgroups and `/proc` at scrape
-time, like cAdvisor; no Docker stats requests, no extra capability. Values are per container, not per
+time; no Docker stats requests, no extra capability. Values are per container, not per
 process.
 
 On Docker hosts with **Windows** containers (Windows Server 2022 and 2025) the same image tag runs the
@@ -96,7 +97,7 @@ itself as a Windows service on the host, everything in one process, from its own
   When a step is missing, HatchLens reports it as `hatchlens_admin_action_needed` and logs the exact
   command.
 - Docker. The container needs the capabilities `SYS_ADMIN` and `DAC_READ_SEARCH` (on ZFS hosts also
-  the device `/dev/zfs`); `privileged` works as a fallback, like cAdvisor.
+  the device `/dev/zfs`); `privileged` works as a fallback.
 - **Windows:** Windows Server 2022 or 2025 with Docker and Windows containers. Volumes and directories
   on NTFS with a USN journal need the HatchLens Host service (MSI) or HatchLens itself as a service;
   see [Install.md](docs/Install.md#windows).
@@ -155,7 +156,7 @@ log has the exact command); `hatchlens_container_image_update_available` (labels
 
 > **The default port changes with version 1.0.**
 >
-> Before 1.0, HatchLens serves `/metrics` on port **8080** (the same default as cAdvisor). With 1.0 the
+> Before 1.0, HatchLens serves `/metrics` on port **8080**. With 1.0 the
 > default changes to a port registered in the Prometheus
 > [default port allocations](https://github.com/prometheus/prometheus/wiki/Default-port-allocations).
 > If you depend on the port, set it explicitly with `listen_address`, and update your Prometheus

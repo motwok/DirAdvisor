@@ -88,7 +88,7 @@ services:
       - /:/host:rslave               # project IDs are set on host directories
       - hatchlens-data:/data        # state.json, images.json, config.yml if used
     ports:
-      - "8080:8080"                  # use another host port if cAdvisor already has 8080
+      - "8080:8080"                  # use another host port if 8080 is taken
     # environment:
     #   HATCHLENS_CONFIG_FILE: /data/config.yml   # or the YAML inline in HATCHLENS_CONFIG
     #   DATA_ROOT: /srv                           # variables used as ${VAR} in the config

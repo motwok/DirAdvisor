@@ -27,15 +27,15 @@ All metrics have the prefix `hatchlens_`; all are gauges except `reconcile_error
   hatchlens_directory_bytes * on(instance, path) group_left(state, owner) hatchlens_directory_info
   ```
 
-- `owner` is the container name, the same value as cAdvisor's `name` label. Volume bytes per container,
-  ready to join with cAdvisor series on `name`:
+- `owner` is the container name, the same value as the `container` label of the image and usage
+  metrics. Volume bytes per container, ready to join with them on `container`:
 
   ```promql
   label_replace(
     sum by (instance, owner) (
       hatchlens_directory_bytes * on(instance, path) group_left(owner) hatchlens_directory_info
     ),
-    "name", "$1", "owner", "(.+)")
+    "container", "$1", "owner", "(.+)")
   ```
 
 ## Problems and admin actions
@@ -74,7 +74,7 @@ All metrics have the prefix `hatchlens_`; all are gauges except `reconcile_error
 | `container_image_update_pulled` | same | 1: the reference already points to another local image (pulled, container not recreated) | containers with a reference, not Swarm tasks |
 | `container_image_info` | `container`, `reference`, `state`, `mode` | 1 | every reported container |
 
-- `container`: the container name, the same value as cAdvisor's `name` label.
+- `container`: the container name.
 - `image`: the reference as written when the container was created (`nginx:1.27`). For Swarm tasks
   without the digest Swarm adds (`name:tag@sha256:...` shows as `name:tag`).
 - `reference`: the normalized reference (`docker.io/library/nginx:1.27`); it joins `container_image_info`
