@@ -127,12 +127,12 @@ func TestMainExitCodes(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		file := filepath.Join(dir, "file")
 		os.WriteFile(file, nil, 0o644)
-		t.Setenv("HATCHLENS_CONFIG", "{ disable: [ volume, image ], docker_socket: '', rootfs: /, directories: [ { path: '"+file+"' } ] }")
+		t.Setenv("HATCHLENS_CONFIG", "{ disable: [ volume, image, cpu, ram, disk, net ], docker_socket: '', rootfs: /, directories: [ { path: '"+file+"' } ] }")
 		if code := Main(nil, &errb); code != 1 || !strings.Contains(errb.String(), "not a directory") {
 			t.Fatalf("not a directory: %d", code)
 		}
 	}
-	t.Setenv("HATCHLENS_CONFIG", "{ disable: [ volume, image ], listen_address: '256.0.0.1:1', storage_path: '"+dir+"', docker_socket: '' }")
+	t.Setenv("HATCHLENS_CONFIG", "{ disable: [ volume, image, cpu, ram, disk, net ], listen_address: '256.0.0.1:1', storage_path: '"+dir+"', docker_socket: '' }")
 	if code := Main(nil, &errb); code != 1 || !strings.Contains(errb.String(), "listen failed") {
 		t.Fatalf("listen failure: %d", code)
 	}

@@ -179,6 +179,41 @@ docker volume rm vol_xfs >/dev/null
 gone() { ! metrics | grep -q 'path="/mnt/it-xfs/vol"' && [ "$(file_projid /mnt/it-xfs/vol/before)" = 0 ]; }
 wait_for 60 "bind volume reset" gone
 
+step "container CPU, memory, disk and network"
+docker network create it_a >/dev/null
+docker network create it_b >/dev/null
+# Non-root workload: /proc/<pid>/net of a foreign user must be readable without CAP_SYS_PTRACE.
+docker run -d --name it_load --user 1000 --network it_a --label com.docker.compose.project=loadstack \
+  --cpus 1.5 --memory 256m alpine sh -c \
+  'yes >/dev/null & dd if=/dev/zero of=/tmp/x bs=1M count=50 conv=fsync 2>/dev/null; sleep 3600' >/dev/null
+docker network connect it_b it_load
+docker run -d --name it_peer --network it_a alpine sleep 3600 >/dev/null
+docker network connect it_b it_peer
+peer_a=$(docker inspect -f '{{(index .NetworkSettings.Networks "it_a").IPAddress}}' it_peer)
+peer_b=$(docker inspect -f '{{(index .NetworkSettings.Networks "it_b").IPAddress}}' it_peer)
+docker exec it_load ping -q -c 20 -s 1000 "$peer_a" >/dev/null
+docker exec it_load ping -q -c 3 "$peer_b" >/dev/null
+L='container="it_load"'
+cpu_ge() { local v; v=$(value container_cpu_usage_seconds_total "$L" 'stack="loadstack"'); [ -n "$v" ] && ge "$v" 1; }
+wait_for 60 "CPU seconds" cpu_ge
+eq() { awk -v a="$1" -v b="$2" 'BEGIN{exit !(a != "" && a+0 == b+0)}'; }
+eq "$(value container_cpu_limit_cores "$L")" 1.5 || fail "CPU limit"
+eq "$(value container_memory_limit_bytes "$L")" 268435456 || fail "memory limit"
+ge "$(value container_memory_usage_bytes "$L")" 1 || fail "memory usage"
+[ -n "$(value container_memory_working_set_bytes "$L")" ] || fail "working set"
+[ -n "$(value container_memory_oom_kills_total "$L")" ] || fail "OOM kills"
+[ -n "$(value container_cpu_throttled_seconds_total "$L")" ] || fail "throttled"
+written() { local v; v=$(value container_disk_written_bytes_total "$L"); [ -n "$v" ] && ge "$v" 50000000; }
+wait_for 30 "disk writes" written
+tx_a=$(value container_network_transmit_bytes_total "$L" 'network="it_a"')
+tx_b=$(value container_network_transmit_bytes_total "$L" 'network="it_b"')
+[ -n "$tx_a" ] && [ -n "$tx_b" ] && ge "$tx_a" 20000 && ! ge "$tx_b" 20000 || fail "per-network split: a=$tx_a b=$tx_b"
+metrics | grep -q '^hatchlens_container_network_receive_packets_total{.*interface="eth[01]".*network="it_b"' || fail "interface label"
+docker rm -f it_load it_peer >/dev/null
+docker network rm it_a it_b >/dev/null
+gone_load() { ! metrics | grep -q "$L"; }
+wait_for 30 "stopped container has no series" gone_load
+
 step "endpoints"
 curl -sf "$URL/-/healthy" >/dev/null || fail "healthy"
 docker kill -s HUP hatchlens >/dev/null

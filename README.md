@@ -1,12 +1,13 @@
 # HatchLens
 
-Per-directory disk usage and image update checks of all containers for Prometheus.
+Per-directory disk usage, image update checks and CPU, memory, disk and network usage of all
+containers for Prometheus.
 
 HatchLens runs as a container next to [cAdvisor](https://github.com/google/cadvisor) and
 [node_exporter](https://github.com/prometheus/node_exporter). It reports how much space every Docker volume
 and any configured directory uses, and which container and Compose stack owns it, without walking the
 file tree. It also reports for every container whether its registry has a newer image than the one it
-runs.
+runs, and how much CPU, memory, disk I/O and network traffic it uses, per Docker network.
 
 > **Status:** early releases (0.x). Behavior and metrics may still change before 1.0.
 
@@ -52,8 +53,16 @@ Nothing is pulled or restarted; the rollout stays with your deployment. Compose 
 services are supported; private registries get credentials in the config. Each check of a Docker Hub
 image counts as one pull.
 
+## Container usage
+
+For every running container: CPU time, CPU and memory limits, memory use and working set, OOM kills,
+bytes and operations read and written, and network traffic per interface, labelled with the Docker
+network it belongs to. On Linux the counters come straight from the host's cgroups and `/proc` at scrape
+time, like cAdvisor; no Docker stats requests, no extra capability. Values are per container, not per
+process.
+
 On Docker hosts with **Windows** containers (Windows Server 2022 and 2025) the same image tag runs the
-image checks only.
+image checks and the container usage (from the Docker stats API); there is no directory measuring.
 
 ## Requirements
 

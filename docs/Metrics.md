@@ -115,12 +115,60 @@ These series exist only while a reported container uses the reference.
 
 A scrape answers from the last results; it never triggers a Docker or registry request.
 
+## Container usage
+
+Per running container (`running`, `paused`, `restarting`); a stopped container has no series. All
+counters start at the container start, so use `rate()` or `increase()`. Labels: `container`, `stack`
+and the additional labels (as on the image metrics); the network metrics add `network` (the Docker
+network) and `interface`.
+
+| Metric | Function | Value |
+|---|---|---|
+| `container_cpu_usage_seconds_total` | `cpu` | CPU time used, all cores |
+| `container_cpu_throttled_seconds_total` | `cpu` | time held back by the CPU limit (Linux) |
+| `container_cpu_limit_cores` | `cpu` | CPU limit in cores; absent without a limit |
+| `container_memory_usage_bytes` | `ram` | memory used, page cache included (Windows: commit) |
+| `container_memory_working_set_bytes` | `ram` | memory without reclaimable page cache (Windows: private working set) |
+| `container_memory_limit_bytes` | `ram` | memory limit; absent without a limit |
+| `container_memory_oom_kills_total` | `ram` | processes killed for lack of memory (Linux) |
+| `container_disk_read_bytes_total` | `disk` | bytes read from block devices, all devices |
+| `container_disk_written_bytes_total` | `disk` | bytes written |
+| `container_disk_reads_total` | `disk` | read operations |
+| `container_disk_writes_total` | `disk` | write operations |
+| `container_network_receive_bytes_total` | `net` | bytes received per interface |
+| `container_network_transmit_bytes_total` | `net` | bytes sent |
+| `container_network_receive_packets_total`, `..._transmit_packets_total` | `net` | packets |
+| `container_network_receive_errors_total`, `..._transmit_errors_total` | `net` | errors |
+| `container_network_receive_dropped_total`, `..._transmit_dropped_total` | `net` | dropped packets |
+
+- Containers with network mode `host`, `none` or `container:<other>` have no network series (they would
+  repeat the host's or the other container's traffic). An interface that belongs to no Docker network
+  (a VPN tunnel inside the container, say) has no `network` label.
+- Linux reads the counters at scrape time from the host's cgroup v2 files and `/proc` (via `rootfs`);
+  the interface is mapped to its Docker network by the container's routes and addresses. cgroup v1
+  hosts get only the network metrics. Windows takes the values from the Docker stats API, polled every
+  `reconcile_interval`; there the network counters are one sum per container, without `network` and
+  `interface`, because Docker does not tell which endpoint belongs to which network.
+
+```promql
+# CPU cores used per container
+rate(hatchlens_container_cpu_usage_seconds_total[5m])
+# share of the CPU limit
+rate(hatchlens_container_cpu_usage_seconds_total[5m]) / hatchlens_container_cpu_limit_cores
+# memory close to the limit
+hatchlens_container_memory_working_set_bytes / hatchlens_container_memory_limit_bytes > 0.9
+# traffic per stack and Docker network
+sum by (stack, network) (rate(hatchlens_container_network_transmit_bytes_total[5m]))
+# disk write rate
+rate(hatchlens_container_disk_written_bytes_total[5m])
+```
+
 ## HatchLens itself
 
 | Metric | Labels | Value |
 |---|---|---|
-| `reconcile_duration_seconds` | | duration of the last reconciles of both parts, added up |
-| `reconcile_errors_total` | | counter of failed reconciles of both parts (Docker unreachable, ...) |
+| `reconcile_duration_seconds` | | duration of the last reconciles of all parts, added up |
+| `reconcile_errors_total` | | counter of failed reconciles of all parts (Docker unreachable, ...) |
 | `build_info` | `version`, `revision`, `goversion` | 1 |
 | `build_timestamp_seconds` | | build time of the binary |
 

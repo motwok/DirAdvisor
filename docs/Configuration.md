@@ -29,7 +29,7 @@ Compose replaces `${VAR}` in the compose file itself; write `$${VAR}` and `$$1` 
 Everything is optional.
 
 ```yaml
-disable: [ ]                       # functions to switch off: directory, volume, image
+disable: [ ]                       # functions to switch off: directory, volume, image, cpu, ram, disk, net
 
 listen_address: ":8080"            # /metrics; the default changes with 1.0
 log_level: info                    # debug, info, warn, error
@@ -86,16 +86,22 @@ images:
 ### Switching functions off
 
 `disable` lists the functions that do not run: `directory` (the entries under `directories`), `volume`
-(Docker volumes) and `image` (image checks). Any other name is an error. A disabled function reports
+(Docker volumes), `image` (image checks), and the per-container usage `cpu`, `ram`, `disk` and `net`
+(see [Metrics.md](Metrics.md#container-usage)). Any other name is an error. A disabled function reports
 nothing and changes nothing; project IDs it set stay on the files and in the state, and it continues
 without a new walk when it is switched on again.
 
-`volume` and `image` need the Docker socket. An empty `docker_socket` while one of them is not disabled
-is an error ("docker_socket is empty, but volume, image need it; add them to disable"), so a forgotten
-socket mount does not go unnoticed.
+All functions except `directory` need the Docker socket. An empty `docker_socket` while one of them is
+not disabled is an error ("docker_socket is empty, but volume, image, cpu, ram, disk, net need it; add
+them to disable"), so a forgotten socket mount does not go unnoticed.
 
-On Windows only the image checks exist: `directory` and `volume` count as disabled, and `directories`
-is an error there.
+On Windows there is no directory measuring: `directory` and `volume` count as disabled, and
+`directories` is an error there.
+
+Excluded containers (`exclude.containers`, `exclude.images`, label `de.mo2000.hatchlens.enable=false`)
+get no usage metrics either. The rules under `labels`, the self-service labels and `container_labels`
+apply to the usage metrics exactly as to the image metrics; their own labels are `container`, `stack`,
+`network` and `interface`, so these names cannot be set.
 
 ### Loading
 

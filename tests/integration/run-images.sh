@@ -108,7 +108,7 @@ d run -d --name rl-y "$RL/y:1" sleep 1d >/dev/null
 
 step "start"
 config <<EOF
-disable: [ directory, volume ]
+disable: [ directory, volume, cpu, ram, disk, net ]
 reconcile_interval: 5s
 rootfs: /
 exclude:

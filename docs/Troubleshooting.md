@@ -65,6 +65,20 @@ registry gives for the reference the container was created with. If the containe
 another tag or an image ID, `image` and `mode` show it. `pulled` 1 means the new image is already on the
 host, but the container still runs the old one: recreate it (`docker compose up -d`, stack redeploy).
 
+## Container usage
+
+**No CPU, memory or disk series, but network series.** The log says `no cgroup v2 found`: the host uses
+cgroup v1, or the host root is not mounted at `rootfs` (`/:/host`). Only cgroup v2 is read.
+
+**A container has no usage series at all.** It is not running, it is excluded, or its function is in
+`disable`. A log line `container cgroup not found` names a container whose cgroup HatchLens could not
+locate.
+
+**No network series for a container.** Its network mode is `host`, `none` or `container:<other>`; those
+are left out on purpose. An interface without `network` label belongs to no Docker network.
+
+**Counters drop to zero.** The container was restarted; `rate()` and `increase()` handle that.
+
 ## Ownership and labels
 
 **`stack` is missing.** The owner container has no Compose project. Add a relabel rule if you want a
