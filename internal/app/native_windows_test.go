@@ -14,6 +14,7 @@ import (
 	"golang.org/x/sys/windows/svc"
 
 	"github.com/motwok/HatchLens/internal/config"
+	"github.com/motwok/HatchLens/internal/host"
 	"github.com/motwok/HatchLens/internal/winhost"
 )
 
@@ -125,6 +126,9 @@ func TestNativeDefaults(t *testing.T) {
 		t.Fatal("host service")
 	}
 	cfg.HostSocket = ""
+	if withHost(nil, nil).(*host.Service) != nil {
+		t.Fatal("withHost")
+	}
 	if hostService(context.Background(), cfg, log, false) != nil {
 		t.Fatal("no socket, no service")
 	}

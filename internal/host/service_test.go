@@ -54,7 +54,7 @@ func newTestService(t *testing.T) (*Service, *fakeBackend) {
 	srv := httptest.NewServer(winhost.Handler(b, "test"))
 	t.Cleanup(srv.Close)
 	addr := srv.Listener.Addr().String()
-	return NewService(func(ctx context.Context, _, _ string) (net.Conn, error) {
+	return NewService("", func(ctx context.Context, _, _ string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, "tcp", addr)
 	}), b
 }
@@ -113,7 +113,7 @@ func TestService(t *testing.T) {
 }
 
 func TestServiceUnreachable(t *testing.T) {
-	s := NewService(func(context.Context, string, string) (net.Conn, error) { return nil, errors.New("no pipe") })
+	s := NewService("", func(context.Context, string, string) (net.Conn, error) { return nil, errors.New("no pipe") })
 	if e, d := s.Stat("/C:/data"); !e || !d {
 		t.Fatal("an unreachable service must not look like a missing path")
 	}
@@ -124,7 +124,7 @@ func TestServiceUnreachable(t *testing.T) {
 	if r, _ := s.QuotaStatus(m); r != InstallHostService {
 		t.Fatalf("status %q", r)
 	}
-	missing := NewService(func(context.Context, string, string) (net.Conn, error) { return nil, fs.ErrNotExist })
+	missing := NewService("", func(context.Context, string, string) (net.Conn, error) { return nil, fs.ErrNotExist })
 	if m, err := missing.MountOf("/C:/data"); err != nil || m.Point != "/C:" {
 		t.Fatalf("a missing pipe is an unreachable service, not a missing path: %+v %v", m, err)
 	}
@@ -143,7 +143,7 @@ func TestServiceBadUsageKey(t *testing.T) {
 	srv := httptest.NewServer(httpHandlerFunc(`{"x":{"bytes":1}}`))
 	t.Cleanup(srv.Close)
 	addr := srv.Listener.Addr().String()
-	s := NewService(func(ctx context.Context, _, _ string) (net.Conn, error) {
+	s := NewService("", func(ctx context.Context, _, _ string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, "tcp", addr)
 	})
 	if _, err := s.Usage(context.Background(), Mount{Point: "/C:"}, 1); err == nil {

@@ -37,7 +37,8 @@ log_format: logfmt                 # logfmt or json
 storage_path: /data                # directory of state.json and images.json; Windows C:\data
 rootfs: /host                      # where the host root filesystem is mounted
 docker_socket: /var/run/docker.sock   # Windows \\.\pipe\docker_engine
-host_socket: \\.\pipe\hatchlens-host     # Windows only: the HatchLens Host service
+host_socket: \\.\pipe\hatchlens-host     # the HatchLens Host service: Windows pipe, or tcp://host:port (Docker Desktop)
+host_token: ${HATCHLENS_HOST_TOKEN}      # token of the host service, needed with tcp://
 reconcile_interval: 60s            # discovery, ownership, ID assignment, image comparison; also on Docker events
 admin_action_log_interval: 1h      # repeat pending admin actions in the log
 walk_files_per_second: 0           # limit for the project ID walks, 0 = no limit, max 1000000000 (always idle I/O)
@@ -100,6 +101,12 @@ On Windows `directory` and `volume` go through the HatchLens Host service on the
 [Install.md](Install.md#windows)) at `host_socket`. An empty `host_socket` while one of them is not
 disabled is an error. Without the service running, the entries show the admin action
 `install_host_service`.
+
+Under Docker Desktop with Linux containers `host_socket: tcp://host.docker.internal:PORT` and
+`host_token` reach the HatchLens Host service on the Windows host (see
+[Install.md](Install.md#docker-desktop)). Directories with a Windows path (`C:\data`) go to it, all
+others use the project quotas in the Docker Desktop VM. A Windows path without `host_socket` is an
+error, and so is `tcp://` without `host_token`.
 
 As the Windows service `HatchLens` on the host (see [Install.md](Install.md#windows-without-a-container-hatchlens-as-a-service))
 the host part runs in the same process, so `host_socket` is not used; the config is

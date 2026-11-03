@@ -32,24 +32,17 @@ func NativePath(p string) string {
 	return p[1:3] + rest
 }
 
-// Host is HostPath on Windows and the identity elsewhere.
-func Host(p string) string {
-	if windows {
-		return HostPath(p)
-	}
-	return p
-}
+// Host is HostPath; on Linux a Windows path is one the HatchLens Host service
+// measures (Docker Desktop).
+func Host(p string) string { return HostPath(p) }
 
-// Display is NativePath on Windows and the identity elsewhere; for labels and
-// logs.
-func Display(p string) string {
-	if windows {
-		return NativePath(p)
-	}
-	return p
+// Display is NativePath, for labels and logs.
+func Display(p string) string { return NativePath(p) }
+
+// Drive reports whether p, in HostPath form, is on a Windows drive.
+func Drive(p string) bool {
+	return len(p) >= 3 && p[0] == '/' && p[2] == ':' && driveLetter(p[1]) && (len(p) == 3 || p[3] == '/')
 }
 
 // driveRoot reports whether p is a whole Windows drive in HostPath form.
-func driveRoot(p string) bool {
-	return len(p) == 3 && p[0] == '/' && p[2] == ':' && driveLetter(p[1])
-}
+func driveRoot(p string) bool { return len(p) == 3 && Drive(p) }

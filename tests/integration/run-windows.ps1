@@ -103,9 +103,18 @@ docker rm -f busy | Out-Null
 docker stop -t 10 hatchlens | Out-Null
 
 Step 'install the host service'
-$p = Start-Process msiexec -ArgumentList '/i', "`"$Msi`"", '/qn', '/l*v', "`"$(Join-Path $data 'msi-install.log')`"" -Wait -PassThru
+$p = Start-Process msiexec -ArgumentList '/i', "`"$Msi`"", '/qn', 'TCP=127.0.0.1:8091', '/l*v', "`"$(Join-Path $data 'msi-install.log')`"" -Wait -PassThru
 if ($p.ExitCode -ne 0) { Get-Content (Join-Path $data 'msi-install.log') -Tail 40 | Write-Host; Fail "msiexec /i: $($p.ExitCode)" }
 WaitFor 30 'service running' { (Get-Service HatchLensHost).Status -eq 'Running' }
+
+Step 'host service over TCP with the token'
+$tokenFile = Join-Path $env:ProgramData 'HatchLens\host-token'
+WaitFor 30 'token file' { Test-Path $tokenFile }
+$token = (Get-Content $tokenFile -Raw).Trim()
+$denied = try { (Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 'http://127.0.0.1:8091/v1/version').StatusCode } catch { [int]$_.Exception.Response.StatusCode }
+if ($denied -ne 401) { Fail "TCP without token: $denied" }
+$v = Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 -Headers @{ Authorization = "Bearer $token" } 'http://127.0.0.1:8091/v1/version'
+if ($v.StatusCode -ne 200) { Fail "TCP with token: $($v.StatusCode)" }
 
 Step 'start with the host service'
 Start-HatchLens @('-v', '\\.\pipe\hatchlens-host:\\.\pipe\hatchlens-host')

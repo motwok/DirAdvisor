@@ -109,7 +109,10 @@ func hostService(ctx context.Context, cfg *config.Config, log *slog.Logger, nati
 		return host.NewLocal(startHost(ctx, log))
 	}
 	if cfg.HostSocket != "" {
-		return host.NewService(docker.Dial(cfg.HostSocket))
+		return host.NewService(cfg.HostToken, docker.Dial(cfg.HostSocket))
 	}
 	return nil
 }
+
+// withHost: on Windows the service is the whole FS.
+func withHost(_ host.FS, svc *host.Service) host.FS { return svc }

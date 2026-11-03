@@ -174,7 +174,7 @@ func serve(ctx context.Context, stop context.CancelFunc, args []string, stderr i
 	if cfg.Runs(config.FnDirectory) || cfg.Runs(config.FnVolume) {
 		fsys = host.New(g.RootFS)
 		if hostSvc != nil {
-			fsys = hostSvc
+			fsys = withHost(fsys, hostSvc)
 		}
 		if cfg.Runs(config.FnDirectory) {
 			if err := cfg.CheckDirectories(fsys.Stat); err != nil {
@@ -209,7 +209,7 @@ func serve(ctx context.Context, stop context.CancelFunc, args []string, stderr i
 	}
 	if cfg.RunsAny(config.ContainerFunctions...) {
 		uo := usage.Options{Docker: dc, RootFS: g.RootFS, Windows: runtime.GOOS == "windows", Log: log}
-		if hostSvc != nil {
+		if hostSvc != nil && uo.Windows {
 			uo.NetNames = netNames(hostSvc, dc)
 		}
 		s.Usage = usage.New(cfg, uo)

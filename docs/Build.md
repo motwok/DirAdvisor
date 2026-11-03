@@ -72,7 +72,8 @@ distribution ([Install.md](Install.md#docker-desktop)); its unit tests replace `
 have no WSL 2.
 
 `hatchlens-host version` prints the version; without arguments it serves in the foreground until
-Ctrl+C (as administrator), under the service control manager as the service.
+Ctrl+C (as administrator), under the service control manager as the service. `-tcp 127.0.0.1:PORT`
+adds the TCP listener with the token (the MSI property `TCP` sets it).
 
 ## Unit tests
 

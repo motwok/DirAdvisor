@@ -195,16 +195,41 @@ func Start(ctx context.Context, log *slog.Logger) Backend {
 	return h
 }
 
-func serve(ctx context.Context, log *slog.Logger) error {
+// serve listens on the pipe and, with tcp set, on that loopback address with
+// the token.
+func serve(ctx context.Context, log *slog.Logger, tcp string) error {
+	var tl net.Listener
+	tok := ""
+	if tcp != "" {
+		var err error
+		if err = loopback(tcp); err == nil {
+			if tok, err = Token(); err == nil {
+				tl, err = net.Listen("tcp", tcp)
+			}
+		}
+		if err != nil {
+			return err
+		}
+	}
 	l, err := listen(Pipe)
 	if err != nil {
+		if tl != nil {
+			tl.Close()
+		}
 		return err
 	}
-	srv := &http.Server{Handler: Handler(Start(ctx, log), Version), ReadHeaderTimeout: 10 * time.Second}
+	h := Handler(Start(ctx, log), Version)
+	srv := &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second}
+	tsrv := &http.Server{Handler: auth(tok, h), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
 		srv.Close()
+		tsrv.Close()
 	}()
+	if tl != nil {
+		go tsrv.Serve(tl)
+		log.Info("listening", "tcp", tcp)
+	}
 	log.Info("listening", "pipe", Pipe, "version", Version)
 	if err := srv.Serve(l); !errors.Is(err, http.ErrServerClosed) {
 		return err
@@ -212,14 +237,17 @@ func serve(ctx context.Context, log *slog.Logger) error {
 	return nil
 }
 
-type service struct{ log *slog.Logger }
+type service struct {
+	log *slog.Logger
+	tcp string
+}
 
 func (s service) Execute(_ []string, req <-chan svc.ChangeRequest, st chan<- svc.Status) (bool, uint32) {
 	st <- svc.Status{State: svc.StartPending}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { done <- serve(ctx, s.log) }()
+	go func() { done <- serve(ctx, s.log, s.tcp) }()
 	st <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown}
 	for {
 		select {
@@ -286,8 +314,11 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		}
 		return 0
 	}
-	if len(args) > 0 {
-		fmt.Fprintln(stderr, "usage: hatchlens-host [version | enable-quota [-vhd PATH]]")
+	fs := flag.NewFlagSet("hatchlens-host", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	tcp := fs.String("tcp", "", "")
+	if fs.Parse(args) != nil || fs.NArg() > 0 {
+		fmt.Fprintln(stderr, "usage: hatchlens-host [-tcp 127.0.0.1:PORT] | version | enable-quota [-vhd PATH]")
 		return 2
 	}
 	inService, err := isService()
@@ -301,7 +332,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 			return 1
 		}
 		defer f.Close()
-		if err := runService(Name, service{log}); err != nil {
+		if err := runService(Name, service{log, *tcp}); err != nil {
 			log.Error("service failed", "err", err)
 			return 1
 		}
@@ -310,7 +341,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 	log := slog.New(slog.NewTextHandler(stderr, nil))
 	ctx, stop := notify(context.Background(), os.Interrupt)
 	defer stop()
-	if err := serve(ctx, log); err != nil {
+	if err := serve(ctx, log, *tcp); err != nil {
 		log.Error("serve failed", "err", err)
 		return 1
 	}

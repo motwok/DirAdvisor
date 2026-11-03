@@ -41,10 +41,11 @@ type remote interface {
 	usage(ctx context.Context, volume string, min uint32) (map[uint32]winhost.Usage, error)
 }
 
-// NewService talks to the HatchLens Host service over its pipe.
-func NewService(dial func(ctx context.Context, network, addr string) (net.Conn, error)) *Service {
+// NewService talks to the HatchLens Host service over its pipe, or over TCP
+// with the token.
+func NewService(token string, dial func(ctx context.Context, network, addr string) (net.Conn, error)) *Service {
 	t := &http.Transport{DialContext: dial}
-	return &Service{r: &pipe{hc: &http.Client{Timeout: 30 * time.Second, Transport: t}, walk: &http.Client{Transport: t}}}
+	return &Service{r: &pipe{hc: &http.Client{Timeout: 30 * time.Second, Transport: t}, walk: &http.Client{Transport: t}, token: token}}
 }
 
 // NewLocal uses the HatchLens Host part in this process.
@@ -146,7 +147,10 @@ type unreachable struct{ err error }
 func (u unreachable) Error() string { return "host service unreachable: " + u.err.Error() }
 
 // pipe calls the HatchLens Host service over HTTP on its named pipe.
-type pipe struct{ hc, walk *http.Client }
+type pipe struct {
+	hc, walk *http.Client
+	token    string
+}
 
 func (p *pipe) call(ctx context.Context, c *http.Client, method, path string, q url.Values, body, out any) error {
 	var rd io.Reader
@@ -157,6 +161,9 @@ func (p *pipe) call(ctx context.Context, c *http.Client, method, path string, q 
 	req, err := http.NewRequestWithContext(ctx, method, "http://hatchlens-host"+path+"?"+q.Encode(), rd)
 	if err != nil {
 		return err
+	}
+	if p.token != "" {
+		req.Header.Set("Authorization", "Bearer "+p.token)
 	}
 	resp, err := c.Do(req)
 	if err != nil {
