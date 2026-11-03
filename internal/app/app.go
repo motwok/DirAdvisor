@@ -142,9 +142,9 @@ func Main(args []string, stderr io.Writer) int {
 		cfg, err = config.Parse(data, os.LookupEnv, nil)
 	}
 	var fsys host.FS
-	if err == nil && (cfg.Enabled(config.FnDirectory) || cfg.Enabled(config.FnVolume)) {
+	if err == nil && (cfg.Runs(config.FnDirectory) || cfg.Runs(config.FnVolume)) {
 		fsys = host.New(cfg.Global.RootFS)
-		if cfg.Enabled(config.FnDirectory) {
+		if cfg.Runs(config.FnDirectory) {
 			err = cfg.CheckDirectories(fsys.Stat)
 		}
 	}

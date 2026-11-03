@@ -24,7 +24,7 @@ func TestDefaults(t *testing.T) {
 	}
 	if c.Global.ReconcileInterval.D() != 60*time.Second || c.Global.AdminActionLogInterval.D() != time.Hour ||
 		!c.Enabled(FnImage) || c.Images.CheckInterval.D() != 24*time.Hour || c.Images.ForgetAfter.D() != 168*time.Hour ||
-		c.Global.ProjectIDs != (IDRange{100000, 199999}) || c.Enabled(FnVolume) == windows || c.Enabled(FnDirectory) == windows ||
+		c.Global.ProjectIDs != (IDRange{100000, 199999}) || !c.Enabled(FnVolume) || !c.Enabled(FnDirectory) || c.Runs(FnVolume) == windows || c.Runs(FnDirectory) == windows ||
 		c.Global.ListenAddress != ":8080" || c.Global.LogLevel != "info" || c.Global.LogFormat != "logfmt" ||
 		c.Global.StoragePath != defaultStorage || c.Global.RootFS != "/host" || c.DockerSocket != docker.DefaultSocket {
 		t.Fatalf("unexpected defaults: %+v", c)

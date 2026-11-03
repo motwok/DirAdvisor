@@ -381,13 +381,16 @@ func checkLabelName(where, n string, allowStackOwner bool) error {
 	return nil
 }
 
-// Enabled reports whether a function runs: not in disable, and on Windows
-// only the image part exists.
+// Enabled reports whether a function is not in disable. On Windows the app
+// starts only the image part (Runs).
 func (c *Config) Enabled(f string) bool {
-	if windows && f != FnImage {
-		return false
-	}
 	return !slices.Contains(c.Disable, f)
+}
+
+// Runs reports whether a function runs on this platform: on Windows only
+// the image part exists.
+func (c *Config) Runs(f string) bool {
+	return c.Enabled(f) && (!windows || f == FnImage)
 }
 
 func (c *Config) validate(stat StatFunc) error {
@@ -399,7 +402,7 @@ func (c *Config) validate(stat StatFunc) error {
 	if c.DockerSocket == "" {
 		var need []string
 		for _, f := range []string{FnVolume, FnImage} {
-			if c.Enabled(f) {
+			if c.Runs(f) {
 				need = append(need, f)
 			}
 		}
