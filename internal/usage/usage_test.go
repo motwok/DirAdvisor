@@ -181,21 +181,24 @@ func TestWindows(t *testing.T) {
 	st.MemoryStats.Commit, st.MemoryStats.PrivateWorkingSet = 300, 200
 	st.StorageStats.ReadBytes, st.StorageStats.WriteBytes, st.StorageStats.Reads, st.StorageStats.Writes = 1, 2, 3, 4
 	st.Networks = map[string]docker.NetStats{"E1": {RxBytes: 10, TxBytes: 20}, "other": {RxBytes: 1}}
-	nets := map[string]docker.Endpoint{"nat": {EndpointID: "e1"}, "x": {}}
+	nets := map[string]docker.Endpoint{"nat": {EndpointID: "e1"}}
+	two := map[string]docker.Endpoint{"nat": {}, "x": {}}
 	j := inspect(0, "nanoserver")
 	j.HostConfig.NanoCpus, j.HostConfig.Memory = 15e8, 1<<20
 	f := &fakeDocker{version: "1.47", reached: true,
 		cs: []docker.Container{ct("1", "w", "running", nil, nets), ct("2", "gone", "running", nil, nil),
-			ct("3", "failing", "running", nil, nil), ct("4", "nonet", "running", nil, nil)},
-		inspects: map[string]docker.ContainerJSON{"1": j, "2": inspect(0, "a"), "3": inspect(0, "a"), "4": inspect(0, "a")},
-		stats:    map[string]docker.Stats{"1": st, "4": st},
+			ct("3", "failing", "running", nil, nil), ct("4", "nonet", "running", nil, nil),
+			ct("5", "multi", "running", nil, two)},
+		inspects: map[string]docker.ContainerJSON{"1": j, "2": inspect(0, "a"), "3": inspect(0, "a"), "4": inspect(0, "a"),
+			"5": inspect(0, "a")},
+		stats:    map[string]docker.Stats{"1": st, "4": st, "5": st},
 		statsErr: map[string]error{"2": notFound, "3": errors.New("busy")},
 	}
 	f.cs[3].HostConfig.NetworkMode = "none"
 	c, _ := newCore(t, cfg, f, true)
 	c.Reconcile(context.Background())
 	c.Reconcile(context.Background())
-	if f.inspected != 4 {
+	if f.inspected != 5 {
 		t.Fatalf("Windows inspects are cached: %d", f.inspected)
 	}
 	out := text(c.Collect())
@@ -208,7 +211,8 @@ func TestWindows(t *testing.T) {
 		`hatchlens_container_disk_writes_total{container="w"} 4`,
 		`hatchlens_container_network_receive_bytes_total{container="w",interface="E1",network="nat"} 10`,
 		`hatchlens_container_network_transmit_bytes_total{container="w",interface="E1",network="nat"} 20`,
-		`hatchlens_container_network_receive_bytes_total{container="w",interface="other"} 1`,
+		`hatchlens_container_network_receive_bytes_total{container="w",interface="other",network="nat"} 1`,
+		`hatchlens_container_network_receive_bytes_total{container="multi",interface="E1"} 10`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %s in\n%s", want, out)
@@ -370,8 +374,8 @@ func TestRelativeCgroup(t *testing.T) {
 	write(t, filepath.Join(cg, "cgroup.procs"), "1\n")
 	write(t, filepath.Join(cg, "system.slice", "docker-self.scope", "cgroup.procs"), "7\n77\n")
 	write(t, filepath.Join(cg, "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "cgroup.procs"), "77\n")
-	write(t, filepath.Join(c.root, "proc", "77", "cgroup"), "0::/\n")
-	c.readlink = func(string) (string, error) { return "77", nil }
+	write(t, filepath.Join(c.root, "proc", "self", "cgroup"), "0::/\n")
+	c.selfPID = func() int { return 77 }
 	c.Reconcile(context.Background())
 	if out := text(c.Collect()); !strings.Contains(out, `cpu_usage_seconds_total{container="web"} 2.5`) {
 		t.Fatalf("relative path:\n%s\n%s", out, log)
@@ -384,8 +388,8 @@ func TestRelativeCgroup(t *testing.T) {
 	c2, _ := newCore(t, cfg, f, false)
 	cg2 := filepath.Join(c2.root, "sys", "fs", "cgroup")
 	write(t, filepath.Join(cg2, "kubepods", "pod", "inner", "cgroup.procs"), "77\n")
-	write(t, filepath.Join(c2.root, "proc", "77", "cgroup"), "0::/inner\n")
-	c2.readlink = func(string) (string, error) { return "77", nil }
+	write(t, filepath.Join(c2.root, "proc", "self", "cgroup"), "1:x:/\n0::/inner\n")
+	c2.selfPID = func() int { return 77 }
 	if b, err := c2.ownBase(); b != "/kubepods/pod" || err != nil {
 		t.Fatalf("nested base %q %v", b, err)
 	}
@@ -393,7 +397,7 @@ func TestRelativeCgroup(t *testing.T) {
 	// Own process in the root cgroup (host namespace).
 	c3, _ := newCore(t, cfg, f, false)
 	write(t, filepath.Join(c3.root, "sys", "fs", "cgroup", "cgroup.procs"), "77\n")
-	c3.readlink = func(string) (string, error) { return "77", nil }
+	c3.selfPID = func() int { return 77 }
 	if b, err := c3.ownBase(); b != "/" || err != nil {
 		t.Fatalf("root base %q %v", b, err)
 	}
@@ -401,14 +405,14 @@ func TestRelativeCgroup(t *testing.T) {
 	// Own cgroup not found: logged once per container, no CPU series.
 	c4, log4 := newCore(t, cfg, f, false)
 	fakeHost(t, c4.root, "abc", "42", "/../docker-abc.scope")
-	c4.readlink = func(string) (string, error) { return "", errors.New("no proc") }
+	c4.selfPID = func() int { return 99 }
 	c4.Reconcile(context.Background())
 	c4.Collect()
-	if out := text(c4.Collect()); strings.Contains(out, "cpu_") || strings.Count(log4.String(), "cgroup not found") != 1 {
+	if out := text(c4.Collect()); strings.Contains(out, "cpu_") || strings.Count(log4.String(), "container cgroup not found") != 1 {
 		t.Fatalf("no base:\n%s\n%s", out, log4)
 	}
 	c5, _ := newCore(t, cfg, f, false)
-	c5.readlink = func(string) (string, error) { return "77", nil }
+	c5.selfPID = func() int { return 77 }
 	if _, err := c5.ownBase(); err == nil {
 		t.Fatal("no cgroup tree")
 	}
@@ -435,7 +439,7 @@ func TestParsers(t *testing.T) {
 
 func TestNewDefaults(t *testing.T) {
 	c := New(mustParse(t, ""), Options{})
-	if c.log == nil || c.now == nil || c.readlink == nil {
+	if c.log == nil || c.now == nil || c.selfPID == nil {
 		t.Fatal("defaults")
 	}
 }

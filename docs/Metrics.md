@@ -147,7 +147,8 @@ network) and `interface`.
 - Linux reads the counters at scrape time from the host's cgroup v2 files and `/proc` (via `rootfs`);
   the interface is mapped to its Docker network by the container's routes and addresses. cgroup v1
   hosts get only the network metrics. Windows takes the values from the Docker stats API, polled every
-  `reconcile_interval`.
+  `reconcile_interval`; there `interface` is the HNS endpoint ID, and `network` is set only for a
+  container on exactly one network (Docker does not tell which endpoint belongs to which network).
 
 ```promql
 # CPU cores used per container

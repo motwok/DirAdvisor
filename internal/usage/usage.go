@@ -45,8 +45,8 @@ type Options struct {
 }
 
 type network struct {
-	name, endpoint, ip4, ip6 string
-	prefix4                  int
+	name, ip4, ip6 string
+	prefix4        int
 }
 
 type target struct {
@@ -74,8 +74,8 @@ type Core struct {
 	windows bool
 	log     *slog.Logger
 	now     func() time.Time
-	// readlink resolves /proc/self (replaced in tests).
-	readlink func(string) (string, error)
+	// selfPID is the own PID in the own PID namespace (replaced in tests).
+	selfPID func() int
 
 	versionOK  bool
 	ready      bool
@@ -100,7 +100,7 @@ func New(cfg *config.Config, o Options) *Core {
 		o.Now = time.Now
 	}
 	return &Core{cfg: cfg, dk: o.Docker, root: o.RootFS, windows: o.Windows, log: o.Log, now: o.Now,
-		readlink: os.Readlink, cache: map[string]inspected{}, warned: map[string]bool{}}
+		selfPID: os.Getpid, cache: map[string]inspected{}, warned: map[string]bool{}}
 }
 
 func (c *Core) Config() *config.Config { return c.cfg }
@@ -209,7 +209,7 @@ func (c *Core) observe(ctx context.Context) ([]target, error) {
 		t.noNet = mode == "host" || mode == "none" || strings.HasPrefix(mode, "container:")
 		for _, name := range slices.Sorted(maps.Keys(ct.NetworkSettings.Networks)) {
 			ep := ct.NetworkSettings.Networks[name]
-			t.networks = append(t.networks, network{name: name, endpoint: ep.EndpointID,
+			t.networks = append(t.networks, network{name: name,
 				ip4: ep.IPAddress, prefix4: ep.IPPrefixLen, ip6: ep.GlobalIPv6Address})
 		}
 		if c.windows {

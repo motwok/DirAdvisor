@@ -73,13 +73,16 @@ func (c *Core) ownBase() (string, error) {
 	}
 	c.baseDone = true
 	c.baseErr = errors.New("own cgroup not found")
-	self, err := c.readlink(filepath.Join(c.root, "proc", "self"))
-	if err != nil {
-		c.baseErr = err
-		return "", err
+	// cgroup.procs shows PIDs as the reader's PID namespace sees them.
+	self := strconv.Itoa(c.selfPID())
+	inNS := ""
+	if b, err := os.ReadFile(filepath.Join(c.root, "proc", "self", "cgroup")); err == nil {
+		for _, l := range strings.Split(string(b), "\n") {
+			if p, ok := strings.CutPrefix(l, "0::"); ok {
+				inNS = p
+			}
+		}
 	}
-	pid, _ := strconv.Atoi(self)
-	inNS := c.cgroupOf(pid)
 	top := filepath.Join(c.root, "sys", "fs", "cgroup")
 	filepath.WalkDir(top, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || !d.IsDir() {

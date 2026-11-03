@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io/fs"
 	"maps"
-	"strings"
 
 	"github.com/motwok/HatchLens/internal/config"
 	"github.com/motwok/HatchLens/internal/metrics"
@@ -45,7 +44,9 @@ func (c *Core) read(t target, cgroupV2 bool) counters {
 	return v
 }
 
-// fromStats maps a Windows stats answer; the network key is the endpoint ID.
+// fromStats maps a Windows stats answer. Its network keys are HNS endpoint
+// GUIDs, which the Docker API does not show; so a container with exactly one
+// network gets that network, with several the network stays unknown.
 func fromStats(t target, v *counters) {
 	st := t.stats
 	if t.nanoCPUs > 0 {
@@ -69,10 +70,8 @@ func fromStats(t target, v *counters) {
 		ic := ifaceCounters{iface: key,
 			rx: [4]float64{float64(n.RxBytes), float64(n.RxPackets), float64(n.RxErrors), float64(n.RxDropped)},
 			tx: [4]float64{float64(n.TxBytes), float64(n.TxPackets), float64(n.TxErrors), float64(n.TxDropped)}}
-		for _, nw := range t.networks {
-			if nw.endpoint != "" && strings.EqualFold(nw.endpoint, key) {
-				ic.network = nw.name
-			}
+		if len(t.networks) == 1 {
+			ic.network = t.networks[0].name
 		}
 		v.nets = append(v.nets, ic)
 	}
