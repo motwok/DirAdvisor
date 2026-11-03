@@ -3,7 +3,6 @@
 package core
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -96,16 +95,16 @@ func TestLabels(t *testing.T) {
 		{Match: config.Match{Volume: "nomatch"}, Labels: map[string]string{"never": "x"}},
 		{Match: config.Match{Container: "app-*", Path: "/var/lib/docker/volumes/*/_data"}, Labels: map[string]string{"tier": "hot"}},
 	}
-	vol := docker.Volume{Name: "app_data", Labels: map[string]string{"retention": "30d", "hatchlens.label.team": "vol", "hatchlens.label.path": "bad"}}
+	vol := docker.Volume{Name: "app_data", Labels: map[string]string{"retention": "30d", "de.mo2000.hatchlens.label.team": "vol", "de.mo2000.hatchlens.label.path": "bad"}}
 	c := ctr("1", "app-web-1", "running", 1, "app")
 	c.Labels["com.example.team"] = "ops"
 	c.Labels["x"] = "y"
-	c.Labels["hatchlens.label.team"] = "ctr"
-	c.Labels["hatchlens.label.site-a"] = "home"
+	c.Labels["de.mo2000.hatchlens.label.team"] = "ctr"
+	c.Labels["de.mo2000.hatchlens.label.site-a"] = "home"
 	// Invalid after sanitizing: dropped, never written (would break the scrape).
-	c.Labels["hatchlens.label.1st"] = "x"
-	c.Labels["hatchlens.label."] = "x"
-	vol.Labels["hatchlens.label.__x"] = "x"
+	c.Labels["de.mo2000.hatchlens.label.1st"] = "x"
+	c.Labels["de.mo2000.hatchlens.label."] = "x"
+	vol.Labels["de.mo2000.hatchlens.label.__x"] = "x"
 	o := ownership{Owner: "app-web-1", Stack: "app", OwnerC: &c}
 	l, ctr := volumeLabels(cfg, vol, volPath, o, nil)
 	want := map[string]string{
@@ -127,69 +126,6 @@ func TestLabels(t *testing.T) {
 	l, ctr = volumeLabels(cfg, vol, volPath, ownership{Stack: "app"}, map[string]string{"container_label_com_example_team": "old", "renamed": "r", "site_a": "x"})
 	if l["container_label_com_example_team"] != "old" || l["renamed"] != "r" || l["site_a"] != "x" || l["team"] != "rule" || len(ctr) != 3 {
 		t.Fatalf("from state: %+v %+v", l, ctr)
-	}
-}
-
-func TestImageCheck(t *testing.T) {
-	e := newEnv(t)
-	if e.c.pub.img.mode() != "disabled" {
-		t.Fatal("default disabled")
-	}
-	e.cfg.Global.ImageUpdateCheck.Enabled = true
-	e.c.CheckImage(context.Background())
-	if e.c.pub.img.mode() != "unknown" {
-		t.Fatalf("unknown expected, got %s", e.c.pub.img.mode())
-	}
-	e.dk.self = docker.ContainerJSON{ID: "self0000000000", Image: "sha256:1"}
-	e.dk.self.Config.Image = "ghcr.io/motwok/hatchlens:1.0.0"
-	e.c.CheckImage(context.Background())
-	if e.c.pub.img.mode() != "pinned" {
-		t.Fatal("pinned expected")
-	}
-	e.dk.self.Config.Image = "ghcr.io/motwok/hatchlens"
-	e.dk.digests = []string{"ghcr.io/motwok/hatchlens@sha256:aa"}
-	e.dk.remote = "sha256:aa"
-	e.c.CheckImage(context.Background())
-	if e.c.pub.img.mode() != "latest" || e.c.pub.img.available || !e.c.pub.img.success {
-		t.Fatalf("same: %+v", e.c.pub.img)
-	}
-	e.dk.remote = "sha256:bb"
-	e.c.CheckImage(context.Background())
-	first := e.c.pub.img.since
-	e.now = e.now.Add(3600e9)
-	e.c.CheckImage(context.Background())
-	if !e.c.pub.img.available || e.c.pub.img.since != first || first == 0 {
-		t.Fatalf("available: %+v", e.c.pub.img)
-	}
-	out := e.metricsText()
-	for _, s := range []string{`hatchlens_image_update_check{mode="latest"} 1`, "hatchlens_image_update_available 1",
-		"hatchlens_image_check_success 1", "hatchlens_image_update_available_since_timestamp_seconds"} {
-		if !strings.Contains(out, s) {
-			t.Errorf("missing %s", s)
-		}
-	}
-	e.dk.remoteErr = context.DeadlineExceeded
-	e.c.CheckImage(context.Background())
-	if e.c.pub.img.success || !e.c.pub.img.available {
-		t.Fatalf("failure keeps values: %+v", e.c.pub.img)
-	}
-}
-
-func TestSplitRef(t *testing.T) {
-	cases := map[string][3]string{
-		"ghcr.io/motwok/hatchlens:latest": {"ghcr.io/motwok/hatchlens", "latest", ""},
-		"ghcr.io/motwok/hatchlens":        {"ghcr.io/motwok/hatchlens", "latest", ""},
-		"localhost:5000/x":                {"localhost:5000/x", "latest", ""},
-		"repo@sha256:aa":                  {"repo", "", "digest"},
-	}
-	for in, want := range cases {
-		r, tag, d := splitRef(in)
-		if r != want[0] || tag != want[1] || (d != (want[2] == "digest")) {
-			t.Errorf("splitRef(%q) = %q %q %v", in, r, tag, d)
-		}
-	}
-	if normalizeRepo("docker.io/library/alpine") != "alpine" {
-		t.Fatal("normalize")
 	}
 }
 

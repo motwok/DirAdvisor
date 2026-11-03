@@ -156,10 +156,6 @@ type fakeDocker struct {
 	root       string
 	volumes    []docker.Volume
 	containers []docker.Container
-	self       docker.ContainerJSON
-	digests    []string
-	remote     string
-	remoteErr  error
 	versionErr error
 	infoErr    error
 	volErr     error
@@ -206,18 +202,6 @@ func (d *fakeDocker) Containers(context.Context) ([]docker.Container, error) {
 		return nil, d.ctrErr
 	}
 	return d.containers, nil
-}
-func (d *fakeDocker) Container(_ context.Context, id string) (docker.ContainerJSON, error) {
-	if id != d.self.ID {
-		return docker.ContainerJSON{}, errors.New("no such container")
-	}
-	return d.self, nil
-}
-func (d *fakeDocker) ImageRepoDigests(context.Context, string) ([]string, error) {
-	return d.digests, nil
-}
-func (d *fakeDocker) DistributionDigest(context.Context, string) (string, error) {
-	return d.remote, d.remoteErr
 }
 
 type env struct {
@@ -304,6 +288,6 @@ func (e *env) reason(p string) string {
 
 func (e *env) metricsText() string {
 	var b strings.Builder
-	metrics.Write(&b, e.c.Collect(context.Background(), BuildInfo{Version: "1.2.3", Revision: "abc", GoVersion: "go1.27"}))
+	metrics.Write(&b, e.c.Collect(context.Background()))
 	return b.String()
 }

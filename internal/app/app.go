@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package app wires config, core and the HTTP server.
+// Package app wires config, both parts and the HTTP server.
 package app
 
 import (
@@ -22,6 +22,7 @@ import (
 	"github.com/motwok/HatchLens/internal/core"
 	"github.com/motwok/HatchLens/internal/docker"
 	"github.com/motwok/HatchLens/internal/host"
+	"github.com/motwok/HatchLens/internal/images"
 	"github.com/motwok/HatchLens/internal/metrics"
 )
 
@@ -57,18 +58,52 @@ func NewLogger(level, format string, w io.Writer) *slog.Logger {
 	return slog.New(slog.NewTextHandler(w, opts))
 }
 
-func buildInfo() core.BuildInfo {
-	var t int64
-	fmt.Sscan(BuildTime, &t)
-	return core.BuildInfo{Version: Version, Revision: Revision, GoVersion: runtime.Version(), BuildTime: t}
+// Server holds the running parts. Core (directories) is nil on Windows, Images
+// is nil when the image checks are off.
+type Server struct {
+	Log      *slog.Logger
+	Core     *core.Core
+	Images   *images.Core
+	FS       host.FS
+	trigger  chan struct{}
+	itrigger chan struct{}
 }
 
-// Server holds the running parts.
-type Server struct {
-	Log     *slog.Logger
-	Core    *core.Core
-	FS      host.FS
-	trigger chan struct{}
+func newServer(log *slog.Logger) *Server {
+	return &Server{Log: log, trigger: make(chan struct{}, 1), itrigger: make(chan struct{}, 1)}
+}
+
+func one(name, help, typ string, v float64) metrics.Family {
+	return metrics.Family{Name: "hatchlens_" + name, Help: help, Type: typ, Samples: []metrics.Sample{{Value: v}}}
+}
+
+// collect returns the families of both parts and the shared ones (spec section 11).
+func (s *Server) collect(ctx context.Context) []metrics.Family {
+	var fams []metrics.Family
+	var seconds, errs float64
+	if s.Core != nil {
+		fams = append(fams, s.Core.Collect(ctx)...)
+		d, e := s.Core.Stats()
+		seconds, errs = seconds+d, errs+e
+	}
+	if s.Images != nil {
+		fams = append(fams, s.Images.Collect()...)
+		d, e := s.Images.Stats()
+		seconds, errs = seconds+d, errs+e
+	}
+	var t int64
+	fmt.Sscan(BuildTime, &t)
+	return append(fams,
+		one("reconcile_duration_seconds", "Duration of the last reconciles.", "gauge", seconds),
+		one("reconcile_errors_total", "Failed reconciles.", "counter", errs),
+		metrics.Family{Name: "hatchlens_build_info", Help: "Build information.", Type: "gauge", Samples: []metrics.Sample{{
+			Labels: map[string]string{"version": Version, "revision": Revision, "goversion": runtime.Version()}, Value: 1}}},
+		one("build_timestamp_seconds", "Build time of the binary.", "gauge", float64(t)),
+	)
+}
+
+func (s *Server) ready() bool {
+	return (s.Core == nil || s.Core.Ready()) && (s.Images == nil || s.Images.Ready())
 }
 
 // Handler serves /metrics and the lifecycle endpoints (spec section 12).
@@ -76,13 +111,13 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", metrics.ContentType)
-		metrics.Write(w, s.Core.Collect(r.Context(), buildInfo()))
+		metrics.Write(w, s.collect(r.Context()))
 	})
 	mux.HandleFunc("/-/healthy", func(w http.ResponseWriter, _ *http.Request) {
 		io.WriteString(w, "HatchLens is healthy.\n")
 	})
 	mux.HandleFunc("/-/ready", func(w http.ResponseWriter, _ *http.Request) {
-		if !s.Core.Ready() {
+		if !s.ready() {
 			http.Error(w, "HatchLens is not ready.", http.StatusServiceUnavailable)
 			return
 		}
@@ -103,11 +138,11 @@ func Main(args []string, stderr io.Writer) int {
 	}
 	data, src, err := config.Source(path, os.Getenv)
 	var cfg *config.Config
-	var fsys host.FS
 	if err == nil {
 		cfg, err = config.Parse(data, os.LookupEnv, nil)
 	}
-	if err == nil {
+	var fsys host.FS
+	if err == nil && runtime.GOOS != "windows" {
 		fsys = host.New(cfg.Global.RootFS)
 		err = cfg.CheckDirectories(fsys.Stat)
 	}
@@ -117,22 +152,32 @@ func Main(args []string, stderr io.Writer) int {
 	}
 	g := cfg.Global
 	log := NewLogger(g.LogLevel, g.LogFormat, stderr)
-	s := &Server{Log: log, FS: fsys, trigger: make(chan struct{}, 1)}
-	var dk core.Docker
+	s := newServer(log)
+	s.FS = fsys
 	var dc *docker.Client
 	if cfg.Docker.Socket != "" {
 		dc = docker.New(cfg.Docker.Socket)
-		dk = dc
 	}
-	selfID := ""
-	if g.RootFS != "/" {
-		selfID = host.SelfContainerID()
+	if fsys != nil {
+		var dk core.Docker
+		if dc != nil {
+			dk = dc
+		}
+		selfID := ""
+		if g.RootFS != "/" {
+			selfID = host.SelfContainerID()
+		}
+		s.Core = core.New(cfg, core.Options{FS: fsys, Docker: dk, StorageDir: g.StoragePath, SelfID: selfID, Log: log})
+		if mod, user := fsys.ZFSVersions(); mod != "" || user != "" {
+			log.Info("ZFS versions", "module", mod, "userland", user)
+		}
 	}
-	s.Core = core.New(cfg, core.Options{FS: fsys, Docker: dk, StorageDir: g.StoragePath, SelfID: selfID, Log: log})
-	log.Info("starting", "version", Version, "revision", Revision, "listen", g.ListenAddress, "config", src)
-	if mod, user := fsys.ZFSVersions(); mod != "" || user != "" {
-		log.Info("ZFS versions", "module", mod, "userland", user)
+	// An empty socket switches the image part off, like images.enabled: false.
+	if cfg.Images.Enabled && dc != nil {
+		s.Images = images.New(cfg, images.Options{Docker: dc, StorageDir: g.StoragePath, Log: log})
 	}
+	log.Info("starting", "version", Version, "revision", Revision, "listen", g.ListenAddress, "config", src,
+		"directories", s.Core != nil, "images", s.Images != nil)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
@@ -145,22 +190,55 @@ func Main(args []string, stderr io.Writer) int {
 	}
 	srv := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second, WriteTimeout: time.Minute, IdleTimeout: 2 * time.Minute}
 	go srv.Serve(ln)
-
-	walkDone := make(chan struct{})
-	go func() { s.Core.RunWalker(ctx); close(walkDone) }()
-	go s.Core.RunImageCheck(ctx)
 	if dc != nil {
 		go s.watchEvents(ctx, dc, time.Second, time.Minute)
 	}
-	code := s.loop(ctx)
-
-	stop()
-	shutdown, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	code := s.run(ctx, stop)
+	closing, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	waitDone(shutdown, walkDone)
-	s.Core.SaveWithin(shutdown)
-	srv.Shutdown(shutdown)
+	srv.Shutdown(closing)
 	log.Info("stopped")
+	return code
+}
+
+// run starts the loops of both parts and blocks until ctx ends or a part stops
+// with a too old Docker; then it writes the states within 8 seconds.
+func (s *Server) run(ctx context.Context, stop context.CancelFunc) int {
+	codes := make(chan int, 2)
+	done := make(chan struct{}, 2)
+	loops := 0
+	if s.Core != nil {
+		loops++
+		go func() { s.Core.RunWalker(ctx); done <- struct{}{} }()
+		go func() { codes <- s.loop(ctx) }()
+	}
+	if s.Images != nil {
+		loops++
+		go func() { s.Images.RunChecks(ctx); done <- struct{}{} }()
+		go func() { codes <- s.imageLoop(ctx) }()
+	}
+	code := 0
+	if loops == 0 {
+		<-ctx.Done()
+	}
+	for i := 0; i < loops; i++ {
+		if c := <-codes; c != 0 {
+			code = c
+			stop()
+		}
+	}
+	stop()
+	budget, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	for i := 0; i < loops; i++ {
+		waitDone(budget, done)
+	}
+	if s.Core != nil {
+		s.Core.SaveWithin(budget)
+	}
+	if s.Images != nil {
+		s.Images.Save()
+	}
 	return code
 }
 
@@ -171,6 +249,7 @@ func waitDone(ctx context.Context, done <-chan struct{}) {
 	}
 }
 
+// loop runs the directory reconciles until ctx ends; 1 means the Docker API is too old.
 func (s *Server) loop(ctx context.Context) int {
 	for ctx.Err() == nil {
 		// Reconcile only fails for a too old Docker; other errors are counted.
@@ -191,14 +270,38 @@ func (s *Server) loop(ctx context.Context) int {
 	return 0
 }
 
+// imageLoop runs the image reconciles until ctx ends; 1 means the Docker API is too old.
+func (s *Server) imageLoop(ctx context.Context) int {
+	for ctx.Err() == nil {
+		if err := s.Images.Reconcile(ctx); err != nil {
+			s.Log.Error("unsupported Docker", "err", err)
+			return 1
+		}
+		timer := time.NewTimer(s.Images.Config().Global.ReconcileInterval.D())
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return 0
+		case <-timer.C:
+		case <-s.itrigger:
+			timer.Stop()
+		case <-s.Images.ReconcileRequests():
+			timer.Stop()
+		}
+	}
+	return 0
+}
+
 func (s *Server) poke() {
-	select {
-	case s.trigger <- struct{}{}:
-	default:
+	for _, ch := range []chan struct{}{s.trigger, s.itrigger} {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
 	}
 }
 
-// watchEvents triggers a reconcile on relevant Docker events (spec DIS-10/11).
+// watchEvents triggers the reconciles on relevant Docker events (spec DIS-10/11).
 func (s *Server) watchEvents(ctx context.Context, dc *docker.Client, minRetry, maxRetry time.Duration) {
 	backoff := minRetry
 	for ctx.Err() == nil {

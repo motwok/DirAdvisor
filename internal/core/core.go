@@ -23,9 +23,6 @@ type Docker interface {
 	Info(ctx context.Context) (docker.Info, error)
 	Volumes(ctx context.Context) ([]docker.Volume, error)
 	Containers(ctx context.Context) ([]docker.Container, error)
-	Container(ctx context.Context, id string) (docker.ContainerJSON, error)
-	ImageRepoDigests(ctx context.Context, id string) ([]string, error)
-	DistributionDigest(ctx context.Context, ref string) (string, error)
 }
 
 // ErrDockerTooOld stops HatchLens (spec DIS-14).
@@ -84,7 +81,6 @@ type published struct {
 	recErrors  float64
 	recSeconds float64
 	ready      bool
-	img        imageState
 }
 
 // publishLocked copies the reconcile results for the handlers (mu held).

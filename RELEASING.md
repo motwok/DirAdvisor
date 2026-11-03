@@ -93,5 +93,5 @@ HatchLens only publishes images. Pulling `:latest` and redeploying the container
 deployment, for example a scheduled stack redeploy. No credentials are needed: the repository and the
 image are public.
 
-HatchLens can optionally tell you when a newer `:latest` exists than the one it runs (image update
-check, off by default), so you notice a stuck redeploy.
+HatchLens reports its own container like every other one in the image update checks, so you notice a
+stuck redeploy of HatchLens itself too.

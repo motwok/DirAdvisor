@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -14,6 +15,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -44,6 +46,7 @@ type Mount struct {
 type Container struct {
 	ID      string            `json:"Id"`
 	Names   []string          `json:"Names"`
+	ImageID string            `json:"ImageID"`
 	Labels  map[string]string `json:"Labels"`
 	State   string            `json:"State"`
 	Created int64             `json:"Created"`
@@ -72,21 +75,58 @@ type ContainerJSON struct {
 	} `json:"Config"`
 }
 
+type Image struct {
+	ID          string   `json:"Id"`
+	RepoDigests []string `json:"RepoDigests"`
+}
+
+type Event struct {
+	Type   string `json:"Type"`
+	Action string `json:"Action"`
+}
+
+// Relevant reports whether an event can change what HatchLens reports.
+func (e Event) Relevant() bool {
+	switch e.Type {
+	case "volume":
+		return e.Action == "create" || e.Action == "destroy"
+	case "container":
+		switch e.Action {
+		case "create", "start", "stop", "die", "destroy":
+			return true
+		}
+	case "image":
+		switch e.Action {
+		case "pull", "tag", "untag", "delete":
+			return true
+		}
+	}
+	return false
+}
+
+type dialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
+
 type Client struct {
-	hc      *http.Client
-	stream  *http.Client
+	hc     *http.Client
+	stream *http.Client
+	mu     sync.Mutex
+	// version is the API version in the request path: MinAPIVersion, or the
+	// daemon's minimum if that is higher (CheckVersion).
 	version string
 }
 
-// New creates a client for a Unix socket.
+func (c *Client) apiVersion() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.version
+}
+
+// New creates a client for the Docker socket (Linux) or named pipe (Windows).
 func New(socket string) *Client {
-	dial := func(ctx context.Context, _, _ string) (net.Conn, error) {
-		var d net.Dialer
-		return d.DialContext(ctx, "unix", socket)
-	}
+	d := dialer(socket)
 	return &Client{
-		hc:      &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{DialContext: dial}},
-		stream:  &http.Client{Transport: &http.Transport{DialContext: dial}},
+		hc:      &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{DialContext: d}},
+		stream:  &http.Client{Transport: &http.Transport{DialContext: d}},
 		version: MinAPIVersion,
 	}
 }
@@ -103,10 +143,13 @@ type APIError struct {
 
 func (e *APIError) Error() string { return fmt.Sprintf("docker API %d: %s", e.Status, e.Message) }
 
-func (c *Client) get(ctx context.Context, p string, out any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://docker/v"+c.version+p, nil)
+func (c *Client) do(ctx context.Context, p string, header http.Header, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://docker/v"+c.apiVersion()+p, nil)
 	if err != nil {
 		return err
+	}
+	for k, v := range header {
+		req.Header[k] = v
 	}
 	resp, err := c.hc.Do(req)
 	if err != nil {
@@ -130,8 +173,17 @@ func apiError(resp *http.Response) error {
 	return &APIError{Status: resp.StatusCode, Message: m.Message}
 }
 
+// IsNotFound reports whether err is a 404 from the Docker API.
+func IsNotFound(err error) bool {
+	var ae *APIError
+	return errors.As(err, &ae) && ae.Status == http.StatusNotFound
+}
+
 // CheckVersion reads the daemon's API version and fails below MinAPIVersion.
-// It returns the version and whether the daemon was reached.
+// reached is true only if the daemon answered with a version, so any other
+// failure is retried instead of read as "too old". A daemon whose minimum is
+// above MinAPIVersion (Docker 29.0 to 29.2: 1.44) refuses lower path versions,
+// so its minimum is used from then on.
 func (c *Client) CheckVersion(ctx context.Context) (version string, reached bool, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://docker/version", nil)
 	if err != nil {
@@ -143,17 +195,22 @@ func (c *Client) CheckVersion(ctx context.Context) (version string, reached bool
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		// A socket proxy denying /version must not read as "too old".
-		return "", true, apiError(resp)
+		return "", false, apiError(resp)
 	}
 	var v struct {
-		APIVersion string `json:"ApiVersion"`
+		APIVersion    string `json:"ApiVersion"`
+		MinAPIVersion string `json:"MinAPIVersion"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&v); err != nil {
-		return "", true, err
+	if err := json.NewDecoder(resp.Body).Decode(&v); err != nil || v.APIVersion == "" {
+		return "", false, fmt.Errorf("no API version in the /version answer: %v", err)
 	}
 	if CompareVersion(v.APIVersion, MinAPIVersion) < 0 {
 		return v.APIVersion, true, fmt.Errorf("Docker API %s is older than the required %s", v.APIVersion, MinAPIVersion)
+	}
+	if CompareVersion(v.MinAPIVersion, MinAPIVersion) > 0 {
+		c.mu.Lock()
+		c.version = v.MinAPIVersion
+		c.mu.Unlock()
 	}
 	return v.APIVersion, true, nil
 }
@@ -181,7 +238,7 @@ func CompareVersion(a, b string) int {
 
 func (c *Client) Info(ctx context.Context) (Info, error) {
 	var i Info
-	err := c.get(ctx, "/info", &i)
+	err := c.do(ctx, "/info", nil, &i)
 	return i, err
 }
 
@@ -189,64 +246,49 @@ func (c *Client) Volumes(ctx context.Context) ([]Volume, error) {
 	var r struct {
 		Volumes []Volume `json:"Volumes"`
 	}
-	err := c.get(ctx, "/volumes", &r)
+	err := c.do(ctx, "/volumes", nil, &r)
 	return r.Volumes, err
 }
 
 func (c *Client) Containers(ctx context.Context) ([]Container, error) {
 	var r []Container
-	err := c.get(ctx, "/containers/json?all=1", &r)
+	err := c.do(ctx, "/containers/json?all=1", nil, &r)
 	return r, err
 }
 
 func (c *Client) Container(ctx context.Context, id string) (ContainerJSON, error) {
 	var r ContainerJSON
-	err := c.get(ctx, "/containers/"+url.PathEscape(id)+"/json", &r)
+	err := c.do(ctx, "/containers/"+url.PathEscape(id)+"/json", nil, &r)
 	return r, err
 }
 
-func (c *Client) ImageRepoDigests(ctx context.Context, id string) ([]string, error) {
-	var r struct {
-		RepoDigests []string `json:"RepoDigests"`
-	}
-	err := c.get(ctx, "/images/"+url.PathEscape(id)+"/json", &r)
-	return r.RepoDigests, err
+// Image inspects an image by ID or reference; an unknown one is an *APIError with Status 404.
+func (c *Client) Image(ctx context.Context, idOrRef string) (Image, error) {
+	var r Image
+	err := c.do(ctx, "/images/"+idOrRef+"/json", nil, &r)
+	return r, err
 }
 
-// DistributionDigest asks the daemon for the registry digest of an image reference.
-func (c *Client) DistributionDigest(ctx context.Context, ref string) (string, error) {
+// Distribution asks the daemon for the registry digest of an image reference.
+// auth is the X-Registry-Auth value, or empty.
+func (c *Client) Distribution(ctx context.Context, ref, auth string) (string, error) {
 	var r struct {
 		Descriptor struct {
 			Digest string `json:"digest"`
 		} `json:"Descriptor"`
 	}
-	err := c.get(ctx, "/distribution/"+ref+"/json", &r)
+	var h http.Header
+	if auth != "" {
+		h = http.Header{"X-Registry-Auth": {auth}}
+	}
+	err := c.do(ctx, "/distribution/"+ref+"/json", h, &r)
 	return r.Descriptor.Digest, err
 }
 
-type Event struct {
-	Type   string `json:"Type"`
-	Action string `json:"Action"`
-}
-
-// Relevant reports whether an event changes volumes or ownership.
-func (e Event) Relevant() bool {
-	switch e.Type {
-	case "volume":
-		return e.Action == "create" || e.Action == "destroy"
-	case "container":
-		switch e.Action {
-		case "create", "destroy", "start", "stop", "die":
-			return true
-		}
-	}
-	return false
-}
-
-// Events streams events until ctx ends or the stream breaks.
+// Events streams container, image and volume events until ctx ends or the stream breaks.
 func (c *Client) Events(ctx context.Context, fn func(Event)) error {
-	filters := url.QueryEscape(`{"type":["container","volume"]}`)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://docker/v"+c.version+"/events?filters="+filters, nil)
+	filters := url.QueryEscape(`{"type":["container","image","volume"]}`)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://docker/v"+c.apiVersion()+"/events?filters="+filters, nil)
 	if err != nil {
 		return err
 	}

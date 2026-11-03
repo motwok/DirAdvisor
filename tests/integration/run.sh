@@ -93,6 +93,8 @@ write_config() {
 global:
   reconcile_interval: 2s
   walk_files_per_second: ${RATE:-0}
+images:
+  enabled: false                   # covered by run-images.sh
 directories:
   - path: /mnt/it-ext4
   - path: /mnt/it-xfs/home/*

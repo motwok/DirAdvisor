@@ -76,14 +76,15 @@ func (c *Core) readUsage(ctx context.Context, groups map[string]*usageGroup) map
 	return data
 }
 
-// BuildInfo describes the binary for hatchlens_build_info.
-type BuildInfo struct {
-	Version, Revision, GoVersion string
-	BuildTime                    int64
-}
-
 func m(name, help, typ string) metrics.Family {
 	return metrics.Family{Name: "hatchlens_" + name, Help: help, Type: typ}
+}
+
+// Stats returns duration and failure count of the reconciles.
+func (c *Core) Stats() (seconds, errors float64) {
+	c.pub.mu.Lock()
+	defer c.pub.mu.Unlock()
+	return c.pub.recSeconds, c.pub.recErrors
 }
 
 func b2f(b bool) float64 {
@@ -93,13 +94,11 @@ func b2f(b bool) float64 {
 	return 0
 }
 
-// Collect reads the quotas and returns all metric families (spec section 11).
-func (c *Core) Collect(ctx context.Context, bi BuildInfo) []metrics.Family {
+// Collect reads the quotas and returns the directory metric families (spec section 11).
+func (c *Core) Collect(ctx context.Context) []metrics.Family {
 	c.pub.mu.Lock()
 	v := c.pub.view
 	v.entries = append([]entryView(nil), c.pub.view.entries...)
-	recErrors, recSeconds := c.pub.recErrors, c.pub.recSeconds
-	img := c.pub.img
 	c.pub.mu.Unlock()
 
 	groups := map[string]*usageGroup{}
@@ -156,29 +155,5 @@ func (c *Core) Collect(ctx context.Context, bi BuildInfo) []metrics.Family {
 			"mountpoint": a.Mountpoint, "fstype": a.FSType, "action": a.Action,
 		}, Value: 1})
 	}
-	one := func(f metrics.Family, val float64) metrics.Family {
-		f.Samples = []metrics.Sample{{Value: val}}
-		return f
-	}
-	fams := []metrics.Family{
-		bytesF, inodesF, infoF, lastF, assignF, unmeasF, overlapF, actionF,
-		one(m("reconcile_duration_seconds", "Duration of the last reconcile.", "gauge"), recSeconds),
-		one(m("reconcile_errors_total", "Failed reconciles.", "counter"), recErrors),
-		{Name: "hatchlens_build_info", Help: "Build information.", Type: "gauge", Samples: []metrics.Sample{{Labels: map[string]string{
-			"version": bi.Version, "revision": bi.Revision, "goversion": bi.GoVersion}, Value: 1}}},
-		one(m("build_timestamp_seconds", "Build time of the binary.", "gauge"), float64(bi.BuildTime)),
-		{Name: "hatchlens_image_update_check", Help: "Mode of the image update check.", Type: "gauge",
-			Samples: []metrics.Sample{{Labels: map[string]string{"mode": img.mode()}, Value: 1}}},
-	}
-	if img.mode() == "latest" && img.checked {
-		fams = append(fams,
-			one(m("image_update_available", "1 if a newer :latest exists than the running image.", "gauge"), b2f(img.available)),
-			one(m("image_check_success", "1 if the last image check succeeded.", "gauge"), b2f(img.success)),
-		)
-		if img.available {
-			fams = append(fams, one(m("image_update_available_since_timestamp_seconds",
-				"Time the newer image was first seen.", "gauge"), float64(img.since)))
-		}
-	}
-	return fams
+	return []metrics.Family{bytesF, inodesF, infoF, lastF, assignF, unmeasF, overlapF, actionF}
 }

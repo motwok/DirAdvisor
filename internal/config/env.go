@@ -3,6 +3,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -12,6 +13,7 @@ var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // Expand replaces ${VAR} and ${VAR:-default}; $$ becomes $. Any other $ is kept,
 // so $1, $2 stay for glob matches.
+// Errors never quote s: it may be a credential (CFG-10).
 func Expand(s string, lookup LookupFunc) (string, error) {
 	if !strings.Contains(s, "$") {
 		return s, nil
@@ -30,12 +32,12 @@ func Expand(s string, lookup LookupFunc) (string, error) {
 		case '{':
 			end := strings.IndexByte(s[i+2:], '}')
 			if end < 0 {
-				return "", fmt.Errorf("unterminated ${ in %q", s)
+				return "", errors.New("unterminated ${")
 			}
 			inner := s[i+2 : i+2+end]
 			name, def, hasDef := strings.Cut(inner, ":-")
 			if !envName.MatchString(name) {
-				return "", fmt.Errorf("invalid variable name %q", name)
+				return "", errors.New("invalid variable name after ${")
 			}
 			v, ok := lookup(name)
 			if hasDef && (!ok || v == "") {

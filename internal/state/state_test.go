@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -130,8 +131,8 @@ func TestSaveErrors(t *testing.T) {
 	if err := New().Save(filepath.Join(file, "dir")); err == nil {
 		t.Fatal("parent is a file")
 	}
-	if os.Geteuid() == 0 {
-		t.Skip("root ignores directory permissions")
+	if os.Geteuid() == 0 || runtime.GOOS == "windows" {
+		t.Skip("directory permissions do not apply")
 	}
 	ro := t.TempDir()
 	if err := os.Chmod(ro, 0o555); err != nil {

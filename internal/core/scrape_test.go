@@ -50,7 +50,7 @@ func TestUsageCacheAndSingleflight(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 5; i++ {
 		wg.Add(1)
-		go func() { defer wg.Done(); e.c.Collect(context.Background(), BuildInfo{}) }()
+		go func() { defer wg.Done(); e.c.Collect(context.Background()) }()
 	}
 	<-started
 	time.Sleep(20 * time.Millisecond)
@@ -85,7 +85,7 @@ func TestCollectAndReadyWhileReconcileHoldsLock(t *testing.T) {
 	defer e.c.mu.Unlock()
 	done := make(chan bool, 1)
 	go func() {
-		e.c.Collect(context.Background(), BuildInfo{})
+		e.c.Collect(context.Background())
 		done <- e.c.Ready()
 	}()
 	select {

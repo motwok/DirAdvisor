@@ -44,8 +44,6 @@ func TestNewVolumeGetsIDAndWalk(t *testing.T) {
 		`hatchlens_directory_info{owner="app-web-1",path="` + volPath + `",project_id="100000",state="running"} 1`,
 		`hatchlens_directory_last_used_timestamp_seconds{path="` + volPath + `"} 1.7e+09`,
 		`hatchlens_directory_assigning{path="` + volPath + `"} 0`,
-		`hatchlens_build_info{goversion="go1.27",revision="abc",version="1.2.3"} 1`,
-		`hatchlens_image_update_check{mode="disabled"} 1`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in\n%s", want, out)
@@ -375,9 +373,6 @@ func TestRunWalkerAndImageLoop(t *testing.T) {
 	if !e.c.st.Entries[state.VolumeKey("v")].WalkDone {
 		t.Fatal("walker did not run")
 	}
-	ctx2, cancel2 := context.WithCancel(context.Background())
-	cancel2()
-	e.c.RunImageCheck(ctx2)
 }
 
 func TestSave(t *testing.T) {

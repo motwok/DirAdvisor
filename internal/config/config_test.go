@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/motwok/HatchLens/internal/docker"
 )
 
 func env(m map[string]string) LookupFunc {
@@ -21,20 +23,20 @@ func TestDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	if c.Global.ReconcileInterval.D() != 60*time.Second || c.Global.AdminActionLogInterval.D() != time.Hour ||
-		c.Global.ImageUpdateCheck.Interval.D() != 24*time.Hour || c.Global.ImageUpdateCheck.Enabled ||
+		!c.Images.Enabled || c.Images.CheckInterval.D() != 24*time.Hour || c.Images.ForgetAfter.D() != 168*time.Hour ||
 		c.Global.ProjectIDs != (IDRange{100000, 199999}) || !c.Docker.Enabled ||
 		c.Global.ListenAddress != ":8080" || c.Global.LogLevel != "info" || c.Global.LogFormat != "logfmt" ||
-		c.Global.StoragePath != "/data" || c.Global.RootFS != "/host" || c.Docker.Socket != "/var/run/docker.sock" {
+		c.Global.StoragePath != defaultStorage || c.Global.RootFS != "/host" || c.Docker.Socket != docker.DefaultSocket {
 		t.Fatalf("unexpected defaults: %+v", c)
 	}
 }
 
 func TestFullConfig(t *testing.T) {
+	skipOnWindows(t)
 	data := `
 global:
   reconcile_interval: 30s
   walk_files_per_second: 100
-  image_update_check: { enabled: true, interval: 12h }
   project_ids: { from: 5000, to: 6000 }
 docker:
   enabled: false
@@ -52,13 +54,31 @@ directories:
     labels: { stack: backup, owner: borg }
   - path: /home/*
     labels: { user: "$1" }
+images:
+  enabled: false
+  check_interval: 6h
+  forget_after: 48h
+  exclude:
+    containers: [ "buildx_*" ]
+    images: [ "${REG}/*" ]
+  registries:
+    - host: ghcr.io
+      username: ${U}
+      password: ${P}
+    - { host: index.docker.io, username: x, password: "${HUB:-}" }
+  container_labels:
+    - com.example.team
+    - { from: com.example.owner, to: owner_team }
+  labels:
+    - match: { stack: "mail*", container: c, image: i }
+      labels: { team: "${TEAM:-mail}" }
 `
-	c, err := Parse([]byte(data), env(map[string]string{"ROOT": "/srv"}), nil)
+	c, err := Parse([]byte(data), env(map[string]string{"ROOT": "/srv", "REG": "ghcr.io/x", "U": "u", "P": "p"}), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.Global.ReconcileInterval.D() != 30*time.Second || c.Global.WalkFilesPerSecond != 100 ||
-		!c.Global.ImageUpdateCheck.Enabled || c.Docker.Enabled {
+		c.Docker.Enabled {
 		t.Fatalf("global/docker not read: %+v", c)
 	}
 	if got := c.Docker.ContainerLabels[0].Target("container_label_"); got != "container_label_com_example_team" {
@@ -69,6 +89,67 @@ directories:
 	}
 	if c.Directories[0].Path != "/srv/backup" || c.Directories[1].Labels["user"] != "$1" {
 		t.Fatalf("directories: %+v", c.Directories)
+	}
+	im := c.Images
+	if im.Enabled || im.CheckInterval.D() != 6*time.Hour || im.Exclude.Images[0] != "ghcr.io/x/*" || im.Exclude.Containers[0] != "buildx_*" {
+		t.Fatalf("images: %+v", im)
+	}
+	if r, ok := im.Registry("ghcr.io"); !ok || r.Username != "u" || r.Password != "p" {
+		t.Fatalf("ghcr: %+v", r)
+	}
+	if r, ok := im.Registry("docker.io"); !ok || r.Password != "" {
+		t.Fatalf("hub: %+v", r)
+	}
+	if _, ok := im.Registry("quay.io"); ok {
+		t.Fatal("quay")
+	}
+	if im.ContainerLabels[1].Target("container_label_") != "owner_team" {
+		t.Fatalf("%+v", im.ContainerLabels)
+	}
+	if r := im.Labels[0]; r.Match.Stack != "mail*" || r.Match.Container != "c" || r.Match.Image != "i" || r.Labels["team"] != "mail" {
+		t.Fatalf("%+v", r)
+	}
+}
+
+func TestInvalidImages(t *testing.T) {
+	for _, data := range []string{
+		"images: { check_interval: 0s }",
+		"images: { forget_after: -1h }",
+		"images: { registries: [ { username: x } ] }",
+		"images: { registries: [ { host: docker.io }, { host: index.docker.io } ] }",
+		"images: { container_labels: [ '' ] }",
+		"images: { container_labels: [ { from: a, to: '1x' } ] }",
+		"images: { container_labels: [ { from: a, to: stack } ] }",
+		"images: { container_labels: [ a.b, a_b ] }",
+		"images: { labels: [ { labels: { mode: x } } ] }",
+		"images: { labels: [ { labels: { 'a-b': x } } ] }",
+		"images: { exclude: { images: [ '${MISSING}' ] } }",
+	} {
+		if _, err := Parse([]byte(data), env(nil), nil); err == nil {
+			t.Errorf("%q: expected error", data)
+		}
+	}
+	// The error names the key, never the value.
+	_, err := Parse([]byte(`images: { registries: [ { host: x, password: "pa${ss" } ] }`), env(nil), nil)
+	if err == nil || !strings.HasPrefix(err.Error(), "images.registries[0].password: unterminated ${") {
+		t.Fatalf("error: %v", err)
+	}
+}
+
+func TestImageHelpers(t *testing.T) {
+	if !IsImageOwn("mode") || IsImageOwn("team") {
+		t.Fatal("IsImageOwn")
+	}
+	if !MatchAny([]string{"x", "a*"}, "b", "ab") || MatchAny([]string{"x"}, "y") || MatchAny(nil, "y") ||
+		!MatchAny([]string{"ghcr.io/*"}, "ghcr.io/a/b:1") {
+		t.Fatal("MatchAny")
+	}
+}
+
+func TestDirectoriesOnWindows(t *testing.T) {
+	_, err := Parse([]byte("directories: [ { path: /srv } ]"), env(nil), nil)
+	if windows != (err != nil) {
+		t.Fatalf("windows %v: %v", windows, err)
 	}
 }
 
@@ -113,6 +194,7 @@ func TestInvalid(t *testing.T) {
 }
 
 func TestAllowed(t *testing.T) {
+	skipOnWindows(t)
 	ok := []string{
 		"directories: [ { path: /srv, labels: { stack: a, owner: b } } ]",
 		"directories: [ { path: /* } ]",
@@ -127,6 +209,7 @@ func TestAllowed(t *testing.T) {
 }
 
 func TestNotADirectory(t *testing.T) {
+	skipOnWindows(t)
 	stat := func(p string) (bool, bool) { return p == "/srv/file", false }
 	if _, err := Parse([]byte("directories: [ { path: /srv/file } ]"), env(nil), stat); err == nil {
 		t.Fatal("expected error for a file")
@@ -229,5 +312,11 @@ func TestSanitize(t *testing.T) {
 	}
 	if !strings.HasPrefix(LabelRef{From: "a"}.Target("p_"), "p_") {
 		t.Fatal("target prefix")
+	}
+}
+
+func skipOnWindows(t *testing.T) {
+	if windows {
+		t.Skip("no directories on Windows")
 	}
 }
