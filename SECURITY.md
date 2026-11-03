@@ -1,6 +1,7 @@
 # Security Policy
 
-HatchLens runs as a container with elevated capabilities, reads the Docker API and sets project IDs on directories of
+HatchLens runs as a container with elevated capabilities (on Windows with a host service running as
+LocalSystem, or as such a service itself), reads the Docker API and sets project IDs on directories of
 the host. That makes it security-sensitive by nature, and reports are taken seriously.
 
 ## Reporting a vulnerability
@@ -68,6 +69,10 @@ HatchLens deliberately does things that can look alarming but are by design:
   ID of files it owns (`chattr -p`), so a tenant can under-report its own volume or charge files to
   another volume's ID; HatchLens re-checks only the top directory. Where tenants are not trusted, run
   the daemon with `userns-remap`, which makes the kernel refuse such changes.
+- on Windows the **HatchLens Host service** (or HatchLens as a service) runs as **LocalSystem** with
+  the backup privilege, so it can read the sizes of all files and the USN journal of the volumes; it
+  changes nothing on them. Its named pipe `\\.\pipe\hatchlens-host` is open to administrators and
+  SYSTEM only, which is why the container runs as `ContainerAdministrator`.
 
 These documented behaviors are **not** vulnerabilities on their own. Genuine security issues include, for
 example: changing file contents, owners or permissions on the host; any write or control call against the

@@ -1,10 +1,19 @@
 # HatchLens
 
+[![Build](https://github.com/motwok/HatchLens/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/motwok/HatchLens/actions/workflows/build.yml)
+[![Release](https://img.shields.io/github/v/release/motwok/HatchLens)](https://github.com/motwok/HatchLens/releases/latest)
+![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
+[![Go](https://img.shields.io/github/go-mod/go-version/motwok/HatchLens)](go.mod)
+![Platforms](https://img.shields.io/badge/platforms-linux%2Famd64%20%7C%20linux%2Farm64%20%7C%20windows%2Famd64-blue)
+[![License](https://img.shields.io/github/license/motwok/HatchLens)](LICENSE)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20Me-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/motwok)
+
 Per-directory disk usage, image update checks and CPU, memory, disk and network usage of all
 containers for Prometheus.
 
 HatchLens runs as a container next to [cAdvisor](https://github.com/google/cadvisor) and
-[node_exporter](https://github.com/prometheus/node_exporter). It reports how much space every Docker volume
+[node_exporter](https://github.com/prometheus/node_exporter), on Linux and Windows Docker hosts, or as a
+Windows service on the host. It reports how much space every Docker volume
 and any configured directory uses, and which container and Compose stack owns it, without walking the
 file tree. It also reports for every container whether its registry has a newer image than the one it
 runs, and how much CPU, memory, disk I/O and network traffic it uses, per Docker network.
@@ -31,8 +40,15 @@ flowchart LR
   C[Configuration] -->|extra directories + labels| R
   R -->|assign project IDs| F[project quotas<br/>ext4 / XFS / ZFS]
   F -->|quotactl_fd or zfs projectspace| M["/metrics"]
+  D -->|containers, image references| I[Image checks]
+  I -->|digest through the daemon| G[Registries]
+  I --> M
+  U[cgroups + /proc<br/>or Docker stats] -->|CPU, memory, disk, net| M
   M --> P[Prometheus]
 ```
+
+On Windows the HatchLens Host service takes the place of the project quotas: it measures NTFS
+directories from one walk plus the USN journal and maps the network traffic to Docker networks.
 
 - **Discovery:** Docker volumes come from the Docker API, new ones are picked up from Docker events
   right away. Anything else, including bind-mounted directories, is added in a configuration file, with
@@ -81,6 +97,9 @@ itself as a Windows service on the host, everything in one process, from its own
   command.
 - Docker. The container needs the capabilities `SYS_ADMIN` and `DAC_READ_SEARCH` (on ZFS hosts also
   the device `/dev/zfs`); `privileged` works as a fallback, like cAdvisor.
+- **Windows:** Windows Server 2022 or 2025 with Docker and Windows containers. Volumes and directories
+  on NTFS with a USN journal need the HatchLens Host service (MSI) or HatchLens itself as a service;
+  see [Install.md](docs/Install.md#windows).
 
 ## Quick start
 
@@ -117,7 +136,10 @@ Main metrics: `hatchlens_directory_bytes` and `hatchlens_directory_inodes` (labe
 `volume`, `stack`), `hatchlens_directory_info` (`owner`, `state`, `project_id`),
 `hatchlens_admin_action_needed` and `hatchlens_directory_unmeasurable` (what is missing and why; the
 log has the exact command); `hatchlens_container_image_update_available` (labels `container`, `image`,
-`stack`), its `_since_timestamp_seconds` and `hatchlens_container_image_update_pulled`. Endpoints:
+`stack`), its `_since_timestamp_seconds` and `hatchlens_container_image_update_pulled`;
+`hatchlens_container_cpu_usage_seconds_total`, `hatchlens_container_memory_working_set_bytes`,
+`hatchlens_container_disk_*` and `hatchlens_container_network_*` (labels `container`, `stack`,
+`network`). Endpoints:
 `/metrics`, `/-/healthy`, `/-/ready`.
 
 ## Documentation
@@ -142,7 +164,8 @@ log has the exact command); `hatchlens_container_image_update_available` (labels
 ## Releases
 
 Every merge into `master` that changes the image is a release (Semantic Versioning), published as
-`ghcr.io/motwok/hatchlens:X.Y.Z` and `:latest`. **Updates of Go and of dependencies are released
+`ghcr.io/motwok/hatchlens:X.Y.Z` and `:latest` (Linux amd64/arm64 and Windows in one tag), with
+`hatchlens-host-X.Y.Z.msi` and `hatchlens-X.Y.Z.msi` attached to the release. **Updates of Go and of dependencies are released
 automatically too**; read the risks and how to opt out in [RELEASING.md](RELEASING.md). Release notes
 are on the [Releases page](https://github.com/motwok/HatchLens/releases), see also
 [CHANGELOG.md](CHANGELOG.md).
@@ -159,7 +182,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Security problems are reported privately
 
 ## Third-party
 
-HatchLens is written in Go; its only dependency is the YAML parser go-yaml. See [NOTICE](NOTICE).
+HatchLens is written in Go; its dependencies are the YAML parser go-yaml and, for Windows,
+`golang.org/x/sys` and go-winio. See [NOTICE](NOTICE).
 
 ## Support Me
 

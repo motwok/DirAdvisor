@@ -5,6 +5,7 @@
 | Path | Content |
 |---|---|
 | `cmd/hatchlens` | `main` |
+| `cmd/hatchlens-host` | `main` of the HatchLens Host service (Windows) |
 | `internal/app` | flags, HTTP endpoints, signals, main loops |
 | `internal/core` | directories: discovery, ownership, labels, project IDs, walks, metrics |
 | `internal/images` | image checks: reconcile, registry checks, comparison, metrics |
@@ -12,13 +13,16 @@
 | `internal/usage` | per-container CPU, memory, disk and network: cgroups and `/proc` (Linux), stats API (Windows) |
 | `internal/config` | config source, environment variables, globs |
 | `internal/docker` | read-only Docker API client (Unix socket, Windows named pipe) |
-| `internal/host` | Linux: mounts, `quotactl_fd`, project ID ioctls, walks, ZFS |
+| `internal/host` | Linux: mounts, `quotactl_fd`, project ID ioctls, walks, ZFS; Windows: client of the host service |
+| `internal/winhost` | HatchLens Host service: pipe API, NTFS walk and USN journal, HNS endpoints |
 | `internal/ref` | image reference parsing and normalization |
 | `internal/state` | `state.json` |
 | `internal/metrics` | Prometheus text format |
+| `packaging/windows` | WiX sources of the two MSIs |
 | `tests/integration` | integration tests |
 
-Unit tests sit next to the code (`*_test.go`). The only dependency is `go.yaml.in/yaml/v3`.
+Unit tests sit next to the code (`*_test.go`). Dependencies: `go.yaml.in/yaml/v3`, and on Windows
+`golang.org/x/sys` and `github.com/Microsoft/go-winio`.
 
 ## Build
 
@@ -101,7 +105,7 @@ tests/integration/run-images.sh hatchlens:test "$PWD/cover-images" classic
 tests/integration/run-images.sh hatchlens:test "$PWD/cover-images" containerd
 ```
 
-`tests/integration/run-windows.ps1 IMAGE COVERDIR LTSC MSI HOSTEXE` runs the Windows image on a Windows
+`tests/integration/run-windows.ps1 IMAGE COVERDIR LTSC MSI HOSTEXE FULLMSI` runs the Windows image on a Windows
 Server host: first without the host service (image checks, container usage, admin action
 `install_host_service`), then with the MSI installed (volume and directory sizes and their growth,
 traffic per Docker network on two `nat` networks), uninstalls the MSI, then installs HatchLens itself
