@@ -64,7 +64,7 @@ foreach ($want in 'hatchlens_container_memory_working_set_bytes\{container="busy
                   'hatchlens_container_memory_limit_bytes\{container="busy"\} 5\.36870912e\+08',
                   'hatchlens_container_cpu_limit_cores\{container="busy"\} 1$',
                   'hatchlens_container_disk_writes_total\{container="busy"\}',
-                  'hatchlens_container_network_receive_bytes_total\{container="busy",interface="[^"]+",network="nat"\}') {
+                  'hatchlens_container_network_receive_bytes_total\{container="busy"\} ') {
     if (-not (($m -split "`n") -match $want)) { Fail "missing $want" }
 }
 docker rm -f busy | Out-Null

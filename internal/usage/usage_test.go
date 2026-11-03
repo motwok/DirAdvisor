@@ -188,17 +188,17 @@ func TestWindows(t *testing.T) {
 	f := &fakeDocker{version: "1.47", reached: true,
 		cs: []docker.Container{ct("1", "w", "running", nil, nets), ct("2", "gone", "running", nil, nil),
 			ct("3", "failing", "running", nil, nil), ct("4", "nonet", "running", nil, nil),
-			ct("5", "multi", "running", nil, two)},
+			ct("5", "multi", "running", nil, two), ct("6", "quiet", "running", nil, nets)},
 		inspects: map[string]docker.ContainerJSON{"1": j, "2": inspect(0, "a"), "3": inspect(0, "a"), "4": inspect(0, "a"),
-			"5": inspect(0, "a")},
-		stats:    map[string]docker.Stats{"1": st, "4": st, "5": st},
+			"5": inspect(0, "a"), "6": inspect(0, "a")},
+		stats:    map[string]docker.Stats{"1": st, "4": st, "5": st, "6": {}},
 		statsErr: map[string]error{"2": notFound, "3": errors.New("busy")},
 	}
 	f.cs[3].HostConfig.NetworkMode = "none"
 	c, _ := newCore(t, cfg, f, true)
 	c.Reconcile(context.Background())
 	c.Reconcile(context.Background())
-	if f.inspected != 5 {
+	if f.inspected != 6 {
 		t.Fatalf("Windows inspects are cached: %d", f.inspected)
 	}
 	out := text(c.Collect())
@@ -209,10 +209,9 @@ func TestWindows(t *testing.T) {
 		`hatchlens_container_memory_working_set_bytes{container="w"} 200`,
 		`hatchlens_container_memory_limit_bytes{container="w"} 1.048576e+06`,
 		`hatchlens_container_disk_writes_total{container="w"} 4`,
-		`hatchlens_container_network_receive_bytes_total{container="w",interface="E1",network="nat"} 10`,
-		`hatchlens_container_network_transmit_bytes_total{container="w",interface="E1",network="nat"} 20`,
-		`hatchlens_container_network_receive_bytes_total{container="w",interface="other",network="nat"} 1`,
-		`hatchlens_container_network_receive_bytes_total{container="multi",interface="E1"} 10`,
+		`hatchlens_container_network_receive_bytes_total{container="w"} 11`,
+		`hatchlens_container_network_transmit_bytes_total{container="w"} 20`,
+		`hatchlens_container_network_receive_bytes_total{container="multi"} 11`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %s in\n%s", want, out)
@@ -220,7 +219,8 @@ func TestWindows(t *testing.T) {
 	}
 	if strings.Contains(out, `container="failing"`) || strings.Contains(out, `container="gone"`) ||
 		strings.Contains(out, `throttled`) || strings.Contains(out, `oom`) ||
-		strings.Contains(out, `network_receive_bytes_total{container="nonet"`) {
+		strings.Contains(out, `network_receive_bytes_total{container="nonet"`) ||
+		strings.Contains(out, `network_receive_bytes_total{container="quiet"`) || strings.Contains(out, `interface=`) {
 		t.Fatalf("unexpected series:\n%s", out)
 	}
 }

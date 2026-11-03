@@ -45,8 +45,8 @@ func (c *Core) read(t target, cgroupV2 bool) counters {
 }
 
 // fromStats maps a Windows stats answer. Its network keys are HNS endpoint
-// GUIDs, which the Docker API does not show; so a container with exactly one
-// network gets that network, with several the network stays unknown.
+// GUIDs the Docker API does not map to networks, so the network counters are
+// summed per container, without network and interface.
 func fromStats(t target, v *counters) {
 	st := t.stats
 	if t.nanoCPUs > 0 {
@@ -63,18 +63,19 @@ func fromStats(t target, v *counters) {
 	s := st.StorageStats
 	v.ioOK, v.readBytes, v.writtenBytes = true, float64(s.ReadBytes), float64(s.WriteBytes)
 	v.reads, v.writes = float64(s.Reads), float64(s.Writes)
-	if t.noNet {
+	if t.noNet || len(st.Networks) == 0 {
 		return
 	}
-	for key, n := range st.Networks {
-		ic := ifaceCounters{iface: key,
-			rx: [4]float64{float64(n.RxBytes), float64(n.RxPackets), float64(n.RxErrors), float64(n.RxDropped)},
-			tx: [4]float64{float64(n.TxBytes), float64(n.TxPackets), float64(n.TxErrors), float64(n.TxDropped)}}
-		if len(t.networks) == 1 {
-			ic.network = t.networks[0].name
+	var sum ifaceCounters
+	for _, n := range st.Networks {
+		for i, x := range [4]uint64{n.RxBytes, n.RxPackets, n.RxErrors, n.RxDropped} {
+			sum.rx[i] += float64(x)
 		}
-		v.nets = append(v.nets, ic)
+		for i, x := range [4]uint64{n.TxBytes, n.TxPackets, n.TxErrors, n.TxDropped} {
+			sum.tx[i] += float64(x)
+		}
 	}
+	v.nets = []ifaceCounters{sum}
 }
 
 // Collect returns the families of the running functions (cpu, ram, disk, net).
