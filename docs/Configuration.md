@@ -101,6 +101,11 @@ On Windows `directory` and `volume` go through the HatchLens Host service on the
 disabled is an error. Without the service running, the entries show the admin action
 `install_host_service`.
 
+As the Windows service `HatchLens` on the host (see [Install.md](Install.md#windows-without-a-container-hatchlens-as-a-service))
+the host part runs in the same process, so `host_socket` is not used; the config is
+`%ProgramData%\HatchLens\config.yml` if it exists, and `storage_path` defaults to
+`%ProgramData%\HatchLens`.
+
 Excluded containers (`exclude.containers`, `exclude.images`, label `de.mo2000.hatchlens.enable=false`)
 get no usage metrics either. The rules under `labels`, the self-service labels and `container_labels`
 apply to the usage metrics exactly as to the image metrics; their own labels are `container`, `stack`,

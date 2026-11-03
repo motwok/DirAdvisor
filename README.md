@@ -64,7 +64,8 @@ process.
 On Docker hosts with **Windows** containers (Windows Server 2022 and 2025) the same image tag runs the
 image checks and the container usage (from the Docker stats API). With the small **HatchLens Host**
 service installed on the host (an MSI of every release) it also measures Docker volumes and directories
-and splits the traffic per Docker network; see [Install.md](docs/Install.md#windows).
+and splits the traffic per Docker network; see [Install.md](docs/Install.md#windows). Or run HatchLens
+itself as a Windows service on the host, everything in one process, from its own MSI.
 
 ## Requirements
 

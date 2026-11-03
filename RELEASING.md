@@ -1,7 +1,7 @@
 # Releasing HatchLens
 
-HatchLens is released as a container image, `ghcr.io/motwok/hatchlens`, plus the MSI of the Windows
-HatchLens Host service as a release asset, with
+HatchLens is released as a container image, `ghcr.io/motwok/hatchlens`, plus two MSIs as release
+assets: the Windows HatchLens Host service and HatchLens itself as a Windows service, with
 [Semantic Versioning](https://semver.org) (0.x before 1.0). **Every merge into `master` that changes the
 image is a release**, that is changes to Go code (not tests), `go.mod`/`go.sum`, the Dockerfiles or the MSI
 source (`packaging`). Merges that
@@ -44,8 +44,8 @@ flowchart LR
 4. On success the image is pushed as `:X.Y.Z` and `:latest`, then the release `vX.Y.Z` is published
    with notes generated from the merged pull requests. Tag, release and image always belong to the same
    commit, and a version tag never exists without its image.
-5. A Windows job builds `hatchlens-host-X.Y.Z.msi` with that version and attaches it to the release a
-   few minutes after it was published.
+5. A Windows job builds `hatchlens-host-X.Y.Z.msi` and `hatchlens-X.Y.Z.msi` with that version and
+   attaches them to the release a few minutes after it was published.
 
 ## Version numbers
 

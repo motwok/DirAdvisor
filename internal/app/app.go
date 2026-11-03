@@ -137,6 +137,18 @@ func (s *Server) Handler() http.Handler {
 
 // Main runs HatchLens and returns the exit code.
 func Main(args []string, stderr io.Writer) int {
+	if code, ok := asService(args); ok {
+		return code
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+	signal.Ignore(syscall.SIGHUP)
+	return serve(ctx, stop, args, stderr, false)
+}
+
+// serve runs HatchLens until ctx ends; native: as a Windows service on the
+// host, with the host part in this process.
+func serve(ctx context.Context, stop context.CancelFunc, args []string, stderr io.Writer, native bool) int {
 	path, err := ParseFlags(args, stderr)
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -145,31 +157,32 @@ func Main(args []string, stderr io.Writer) int {
 		fmt.Fprintln(stderr, err)
 		return 2
 	}
-	data, src, err := config.Source(path, os.Getenv)
+	data, src, err := config.Source(path, configEnv(native))
 	var cfg *config.Config
 	if err == nil {
 		cfg, err = config.Parse(data, os.LookupEnv, nil)
-	}
-	var fsys host.FS
-	var hostSvc *host.Service
-	if err == nil && runtime.GOOS == "windows" && cfg.HostSocket != "" {
-		hostSvc = host.NewService(docker.Dial(cfg.HostSocket))
-	}
-	if err == nil && (cfg.Runs(config.FnDirectory) || cfg.Runs(config.FnVolume)) {
-		fsys = host.New(cfg.Global.RootFS)
-		if hostSvc != nil {
-			fsys = hostSvc
-		}
-		if cfg.Runs(config.FnDirectory) {
-			err = cfg.CheckDirectories(fsys.Stat)
-		}
 	}
 	if err != nil {
 		NewLogger("info", "logfmt", stderr).Error("invalid config", "source", src, "err", err)
 		return 1
 	}
+	nativeStorage(cfg, native)
 	g := cfg.Global
 	log := NewLogger(g.LogLevel, g.LogFormat, stderr)
+	var fsys host.FS
+	hostSvc := hostService(ctx, cfg, log, native)
+	if cfg.Runs(config.FnDirectory) || cfg.Runs(config.FnVolume) {
+		fsys = host.New(g.RootFS)
+		if hostSvc != nil {
+			fsys = hostSvc
+		}
+		if cfg.Runs(config.FnDirectory) {
+			if err := cfg.CheckDirectories(fsys.Stat); err != nil {
+				log.Error("invalid config", "source", src, "err", err)
+				return 1
+			}
+		}
+	}
 	s := newServer(log)
 	s.FS = fsys
 	var dc *docker.Client
@@ -202,11 +215,7 @@ func Main(args []string, stderr io.Writer) int {
 		s.Usage = usage.New(cfg, uo)
 	}
 	log.Info("starting", "version", Version, "revision", Revision, "listen", g.ListenAddress, "config", src,
-		"directories", s.Core != nil, "images", s.Images != nil, "containers", s.Usage != nil)
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
-	defer stop()
-	signal.Ignore(syscall.SIGHUP)
+		"directories", s.Core != nil, "images", s.Images != nil, "containers", s.Usage != nil, "service", native)
 
 	ln, err := net.Listen("tcp", g.ListenAddress)
 	if err != nil {

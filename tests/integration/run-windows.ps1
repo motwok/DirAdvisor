@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Windows integration test on a Windows runner with process isolation.
-# Usage: run-windows.ps1 IMAGE COVERDIR LTSC MSI HOSTEXE
+# Usage: run-windows.ps1 IMAGE COVERDIR LTSC MSI HOSTEXE FULLMSI
 param(
     [Parameter(Mandatory)] [string] $Image,
     [Parameter(Mandatory)] [string] $Cover,
     [Parameter(Mandatory)] [string] $Ltsc,
     [Parameter(Mandatory)] [string] $Msi,
-    [Parameter(Mandatory)] [string] $HostExe
+    [Parameter(Mandatory)] [string] $HostExe,
+    [Parameter(Mandatory)] [string] $FullMsi
 )
 $ErrorActionPreference = 'Stop'
 
@@ -27,8 +28,10 @@ function Fail($text) {
     Write-Host "FAIL: $text"
     Write-Host '--- metrics'; Write-Host (Metrics)
     Write-Host '--- log'; docker logs hatchlens 2>&1 | Select-Object -Last 80 | Write-Host
-    $log = Join-Path $env:ProgramData 'HatchLens\hatchlens-host.log'
-    if (Test-Path $log) { Write-Host '--- host service log'; Get-Content $log -Tail 40 | Write-Host }
+    foreach ($name in 'hatchlens-host.log', 'hatchlens.log') {
+        $log = Join-Path $env:ProgramData "HatchLens\$name"
+        if (Test-Path $log) { Write-Host "--- $name"; Get-Content $log -Tail 40 | Write-Host }
+    }
     exit 1
 }
 function Invoke-Docker {
@@ -127,4 +130,32 @@ Step 'uninstall the host service'
 $p = Start-Process msiexec -ArgumentList '/x', "`"$Msi`"", '/qn' -Wait -PassThru
 if ($p.ExitCode -ne 0) { Fail "msiexec /x: $($p.ExitCode)" }
 if (Get-Service HatchLensHost -ErrorAction SilentlyContinue) { Fail 'service still installed' }
+
+Step 'HatchLens as one Windows service on the host'
+$pd = Join-Path $env:ProgramData 'HatchLens'
+New-Item -ItemType Directory -Force $pd | Out-Null
+@"
+reconcile_interval: 5s
+directories:
+  - path: '$dir'
+"@ | Set-Content -Encoding ascii (Join-Path $pd 'config.yml')
+$p = Start-Process msiexec -ArgumentList '/i', "`"$FullMsi`"", '/qn', '/l*v', "`"$(Join-Path $data 'msi-full.log')`"" -Wait -PassThru
+if ($p.ExitCode -ne 0) { Get-Content (Join-Path $data 'msi-full.log') -Tail 40 | Write-Host; Fail "msiexec /i full: $($p.ExitCode)" }
+WaitFor 30 'HatchLens service running' { (Get-Service HatchLens).Status -eq 'Running' }
+$script:url = 'http://127.0.0.1:8080'
+WaitFor 120 'ready' { (Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 "$script:url/-/ready").StatusCode -eq 200 }
+WaitFor 120 'volume measured' { (Value 'hatchlens_directory_bytes\{.*source="volume".*volume="vol1"') -gt 0 }
+WaitFor 60 'directory measured' { (Value 'hatchlens_directory_bytes\{path="C:\\\\hl-dir",source="config"') -gt 0 }
+WaitFor 120 'target checked' { (Metrics) -match 'hatchlens_container_image_info\{container="target",mode="checked",' }
+if ((Metrics) -match 'install_host_service') { Fail 'admin action in the service' }
+if (-not (Test-Path (Join-Path $pd 'state.json'))) { Fail 'state not in ProgramData' }
+Invoke-Docker create --name busy3 --network nat $nano ping -t 127.0.0.1 | Out-Null
+Invoke-Docker network connect net2 busy3
+Invoke-Docker start busy3 | Out-Null
+WaitFor 120 'nat series' { (Metrics) -match 'hatchlens_container_network_receive_bytes_total\{container="busy3",network="nat"\}' }
+WaitFor 60 'net2 series' { (Metrics) -match 'hatchlens_container_network_receive_bytes_total\{container="busy3",network="net2"\}' }
+docker rm -f busy3 | Out-Null
+$p = Start-Process msiexec -ArgumentList '/x', "`"$FullMsi`"", '/qn' -Wait -PassThru
+if ($p.ExitCode -ne 0) { Fail "msiexec /x full: $($p.ExitCode)" }
+if (Get-Service HatchLens -ErrorAction SilentlyContinue) { Fail 'HatchLens service still installed' }
 Step 'passed'
