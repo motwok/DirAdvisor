@@ -24,7 +24,7 @@ func TestDefaults(t *testing.T) {
 	}
 	if c.Global.ReconcileInterval.D() != 60*time.Second || c.Global.AdminActionLogInterval.D() != time.Hour ||
 		!c.Enabled(FnImage) || c.Images.CheckInterval.D() != 24*time.Hour || c.Images.ForgetAfter.D() != 168*time.Hour ||
-		c.Global.ProjectIDs != (IDRange{100000, 199999}) || !c.Enabled(FnVolume) || !c.Enabled(FnDirectory) || c.Runs(FnVolume) == windows || c.Runs(FnDirectory) == windows ||
+		c.Global.ProjectIDs != (IDRange{100000, 199999}) || !c.Runs(FnVolume) || !c.Runs(FnDirectory) || c.HostSocket != defaultHostSocket ||
 		c.Global.ListenAddress != ":8080" || c.Global.LogLevel != "info" || c.Global.LogFormat != "logfmt" ||
 		c.Global.StoragePath != defaultStorage || c.Global.RootFS != "/host" || c.DockerSocket != docker.DefaultSocket {
 		t.Fatalf("unexpected defaults: %+v", c)
@@ -144,10 +144,21 @@ func TestImageHelpers(t *testing.T) {
 	}
 }
 
-func TestDirectoriesOnWindows(t *testing.T) {
-	_, err := Parse([]byte("directories: [ { path: /srv } ]"), env(nil), nil)
+func TestHostSocket(t *testing.T) {
+	c, err := Parse([]byte(`directories: [ { path: 'D:\data\x' } ]`), env(nil), nil)
+	if windows {
+		if err != nil || c.Directories[0].Path != "/D:/data/x" {
+			t.Fatalf("Windows path: %+v %v", c, err)
+		}
+	} else if err == nil {
+		t.Fatal("a Windows path is not absolute on Linux")
+	}
+	_, err = Parse([]byte(`host_socket: ""`), env(nil), nil)
 	if windows != (err != nil) {
-		t.Fatalf("windows %v: %v", windows, err)
+		t.Fatalf("empty host_socket on windows=%v: %v", windows, err)
+	}
+	if _, err := Parse([]byte(`{ host_socket: "", disable: [ directory, volume ] }`), env(nil), nil); err != nil {
+		t.Fatal(err)
 	}
 }
 

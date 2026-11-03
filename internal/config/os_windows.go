@@ -4,8 +4,8 @@
 
 package config
 
-// On Windows only the image part runs.
 const (
-	windows        = true
-	defaultStorage = `C:\data`
+	windows           = true
+	defaultStorage    = `C:\data`
+	defaultHostSocket = `\\.\pipe\hatchlens-host`
 )

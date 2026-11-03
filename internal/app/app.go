@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -150,8 +151,15 @@ func Main(args []string, stderr io.Writer) int {
 		cfg, err = config.Parse(data, os.LookupEnv, nil)
 	}
 	var fsys host.FS
+	var hostSvc *host.Service
+	if err == nil && runtime.GOOS == "windows" && cfg.HostSocket != "" {
+		hostSvc = host.NewService(docker.Dial(cfg.HostSocket))
+	}
 	if err == nil && (cfg.Runs(config.FnDirectory) || cfg.Runs(config.FnVolume)) {
 		fsys = host.New(cfg.Global.RootFS)
+		if hostSvc != nil {
+			fsys = hostSvc
+		}
 		if cfg.Runs(config.FnDirectory) {
 			err = cfg.CheckDirectories(fsys.Stat)
 		}
@@ -187,7 +195,11 @@ func Main(args []string, stderr io.Writer) int {
 		s.Images = images.New(cfg, images.Options{Docker: dc, StorageDir: g.StoragePath, Log: log})
 	}
 	if cfg.RunsAny(config.ContainerFunctions...) {
-		s.Usage = usage.New(cfg, usage.Options{Docker: dc, RootFS: g.RootFS, Windows: runtime.GOOS == "windows", Log: log})
+		uo := usage.Options{Docker: dc, RootFS: g.RootFS, Windows: runtime.GOOS == "windows", Log: log}
+		if hostSvc != nil {
+			uo.NetNames = netNames(hostSvc, dc)
+		}
+		s.Usage = usage.New(cfg, uo)
 	}
 	log.Info("starting", "version", Version, "revision", Revision, "listen", g.ListenAddress, "config", src,
 		"directories", s.Core != nil, "images", s.Images != nil, "containers", s.Usage != nil)
@@ -364,5 +376,34 @@ func (s *Server) watchEvents(ctx context.Context, dc *docker.Client, minRetry, m
 		if backoff *= 2; backoff > maxRetry {
 			backoff = maxRetry
 		}
+	}
+}
+
+// netNames maps the Windows stats network keys (HNS endpoint IDs) to Docker
+// network names: the host service knows each endpoint's HNS network, Docker
+// keeps the HNS network ID as an option of the network.
+func netNames(svc *host.Service, dc *docker.Client) func(context.Context) (map[string]string, error) {
+	return func(ctx context.Context) (map[string]string, error) {
+		eps, err := svc.Endpoints(ctx)
+		if err != nil {
+			return nil, err
+		}
+		nets, err := dc.Networks(ctx)
+		if err != nil {
+			return nil, err
+		}
+		byHNS := map[string]string{}
+		for _, n := range nets {
+			if id := n.Options["com.docker.network.windowsshim.hnsid"]; id != "" {
+				byHNS[strings.ToUpper(id)] = n.Name
+			}
+		}
+		out := map[string]string{}
+		for key, hnsNet := range eps {
+			if name, ok := byHNS[hnsNet]; ok {
+				out[key] = name
+			}
+		}
+		return out, nil
 	}
 }

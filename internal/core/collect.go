@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"github.com/motwok/HatchLens/internal/config"
 	"strconv"
 	"sync"
 	"time"
@@ -121,12 +122,12 @@ func (c *Core) Collect(ctx context.Context) []metrics.Family {
 	lastF := m("directory_last_used_timestamp_seconds", "Last time a running container used the volume.", "gauge")
 	assignF := m("directory_assigning", "1 while the project ID walk of the directory runs.", "gauge")
 	for _, e := range v.entries {
-		assignF.Samples = append(assignF.Samples, metrics.Sample{Labels: map[string]string{"path": e.Path}, Value: b2f(e.Assigning)})
+		assignF.Samples = append(assignF.Samples, metrics.Sample{Labels: map[string]string{"path": config.Display(e.Path)}, Value: b2f(e.Assigning)})
 		infoF.Samples = append(infoF.Samples, metrics.Sample{Labels: map[string]string{
-			"path": e.Path, "owner": e.Owner, "state": e.State, "project_id": strconv.FormatUint(uint64(e.ProjectID), 10),
+			"path": config.Display(e.Path), "owner": e.Owner, "state": e.State, "project_id": strconv.FormatUint(uint64(e.ProjectID), 10),
 		}, Value: 1})
 		if e.Source == "volume" && e.LastUsed > 0 {
-			lastF.Samples = append(lastF.Samples, metrics.Sample{Labels: map[string]string{"path": e.Path}, Value: float64(e.LastUsed)})
+			lastF.Samples = append(lastF.Samples, metrics.Sample{Labels: map[string]string{"path": config.Display(e.Path)}, Value: float64(e.LastUsed)})
 		}
 		u, ok := usage[e.Mount.Point+"|"+e.Mount.Source]
 		if !ok {
@@ -137,22 +138,22 @@ func (c *Core) Collect(ctx context.Context) []metrics.Family {
 		for k, val := range e.Labels {
 			l[k] = val
 		}
-		l["path"], l["source"], l["volume"], l["stack"] = e.Path, e.Source, e.Volume, e.Stack
+		l["path"], l["source"], l["volume"], l["stack"] = config.Display(e.Path), e.Source, e.Volume, e.Stack
 		bytesF.Samples = append(bytesF.Samples, metrics.Sample{Labels: l, Value: float64(q.Bytes)})
 		inodesF.Samples = append(inodesF.Samples, metrics.Sample{Labels: l, Value: float64(q.Inodes)})
 	}
 	unmeasF := m("directory_unmeasurable", "1 if a directory cannot be measured.", "gauge")
 	for _, u := range v.unmeas {
-		unmeasF.Samples = append(unmeasF.Samples, metrics.Sample{Labels: map[string]string{"path": u.Path, "reason": u.Reason}, Value: 1})
+		unmeasF.Samples = append(unmeasF.Samples, metrics.Sample{Labels: map[string]string{"path": config.Display(u.Path), "reason": u.Reason}, Value: 1})
 	}
 	overlapF := m("directory_overlap", "1 per entry inside another entry.", "gauge")
 	for _, o := range v.overlap {
-		overlapF.Samples = append(overlapF.Samples, metrics.Sample{Labels: map[string]string{"path": o.Outer, "inner": o.Inner}, Value: 1})
+		overlapF.Samples = append(overlapF.Samples, metrics.Sample{Labels: map[string]string{"path": config.Display(o.Outer), "inner": config.Display(o.Inner)}, Value: 1})
 	}
 	actionF := m("admin_action_needed", "1 per step only the admin can do; see the log for the command.", "gauge")
 	for _, a := range v.actions {
 		actionF.Samples = append(actionF.Samples, metrics.Sample{Labels: map[string]string{
-			"mountpoint": a.Mountpoint, "fstype": a.FSType, "action": a.Action,
+			"mountpoint": config.Display(a.Mountpoint), "fstype": a.FSType, "action": a.Action,
 		}, Value: 1})
 	}
 	return []metrics.Family{bytesF, inodesF, infoF, lastF, assignF, unmeasF, overlapF, actionF}

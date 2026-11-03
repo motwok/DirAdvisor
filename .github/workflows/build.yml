@@ -51,6 +51,7 @@ jobs:
           GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./cmd/hatchlens
           GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o /dev/null ./cmd/hatchlens
           GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./cmd/hatchlens
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./cmd/hatchlens-host
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cover-unit-${{ runner.os }}
@@ -150,9 +151,21 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
           docker build -f Dockerfile.windows --build-arg OSVERSION=${{ matrix.ltsc }} -t hatchlens:test .
           if ($LASTEXITCODE -ne 0) { exit 1 }
+      - name: Build host service and MSI
+        shell: pwsh
+        run: |
+          $env:CGO_ENABLED = '0'
+          go build -cover "-covermode=atomic" "-coverpkg=./..." -o dist/hatchlens-host-cover.exe ./cmd/hatchlens-host
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          go build -trimpath -o dist/hatchlens-host.exe ./cmd/hatchlens-host
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          dotnet tool install --global wix --version 5.0.2
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          wix build packaging/windows/hatchlens-host.wxs -arch x64 -d Version=0.0.1 -d Exe=dist/hatchlens-host.exe -o dist/hatchlens-host.msi
+          if ($LASTEXITCODE -ne 0) { exit 1 }
       - name: Integration test
         shell: pwsh
-        run: tests/integration/run-windows.ps1 hatchlens:test "$PWD\cover-integration" ${{ matrix.ltsc }}
+        run: tests/integration/run-windows.ps1 hatchlens:test "$PWD\cover-integration" ${{ matrix.ltsc }} "$PWD\dist\hatchlens-host.msi" "$PWD\dist\hatchlens-host-cover.exe"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -206,6 +219,9 @@ jobs:
     if: github.event_name != 'pull_request'
     needs: [unit, integration, integration-images, integration-windows, coverage]
     runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.changed.outputs.release }}
+      version: ${{ steps.drafter.outputs.resolved_version }}
     # One release at a time: tag, image and notes must belong to one commit.
     concurrency:
       group: release
@@ -224,7 +240,7 @@ jobs:
         id: changed
         run: |
           last=$(git describe --tags --abbrev=0 2>/dev/null || true)
-          if [ -z "$last" ] || ! git diff --quiet "$last" HEAD -- '*.go' ':(exclude)*_test.go' go.mod go.sum Dockerfile Dockerfile.windows; then
+          if [ -z "$last" ] || ! git diff --quiet "$last" HEAD -- '*.go' ':(exclude)*_test.go' go.mod go.sum Dockerfile Dockerfile.windows packaging; then
             echo "release=true" >> "$GITHUB_OUTPUT"
           else
             echo "release=false" >> "$GITHUB_OUTPUT"
@@ -357,3 +373,36 @@ jobs:
           publish: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  msi:
+    name: Release MSI
+    needs: [release]
+    if: needs.release.outputs.released == 'true'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Go version from the Dockerfile
+        id: go
+        shell: bash
+        run: echo "version=$(sed -n 's/^FROM .*golang:\([0-9.]*\).*/\1/p' Dockerfile)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ steps.go.outputs.version }}
+      - name: Build the MSI and attach it to the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          $env:CGO_ENABLED = '0'
+          go build -trimpath -ldflags "-s -w -X github.com/motwok/HatchLens/internal/winhost.Version=$env:VERSION" -o dist/hatchlens-host.exe ./cmd/hatchlens-host
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          dotnet tool install --global wix --version 5.0.2
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $msi = "dist/hatchlens-host-$env:VERSION.msi"
+          wix build packaging/windows/hatchlens-host.wxs -arch x64 -d "Version=$env:VERSION" -d Exe=dist/hatchlens-host.exe -o $msi
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          gh release upload "v$env:VERSION" $msi --clobber
+          if ($LASTEXITCODE -ne 0) { exit 1 }

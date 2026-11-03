@@ -225,6 +225,38 @@ func TestWindows(t *testing.T) {
 	}
 }
 
+func TestWindowsNetNames(t *testing.T) {
+	cfg := mustParse(t, "")
+	var st docker.Stats
+	st.Networks = map[string]docker.NetStats{"e1": {RxBytes: 10}, "E2": {RxBytes: 5}, "other": {RxBytes: 1}}
+	f := &fakeDocker{version: "1.47", reached: true,
+		cs:       []docker.Container{ct("1", "w", "running", nil, nil)},
+		inspects: map[string]docker.ContainerJSON{"1": inspect(0, "a")},
+		stats:    map[string]docker.Stats{"1": st},
+	}
+	names := func(context.Context) (map[string]string, error) {
+		return map[string]string{"E1": "nat", "E2": "netA"}, nil
+	}
+	c := New(cfg, Options{Docker: f, Windows: true, NetNames: names, Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	c.Reconcile(context.Background())
+	out := text(c.Collect())
+	for _, want := range []string{
+		`hatchlens_container_network_receive_bytes_total{container="w",network="nat"} 10`,
+		`hatchlens_container_network_receive_bytes_total{container="w",network="netA"} 5`,
+		`hatchlens_container_network_receive_bytes_total{container="w"} 1`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %s in\n%s", want, out)
+		}
+	}
+	broken := func(context.Context) (map[string]string, error) { return nil, errors.New("no service") }
+	c = New(cfg, Options{Docker: f, Windows: true, NetNames: broken, Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	c.Reconcile(context.Background())
+	if out := text(c.Collect()); !strings.Contains(out, `hatchlens_container_network_receive_bytes_total{container="w"} 16`) {
+		t.Fatalf("without names one sum:\n%s", out)
+	}
+}
+
 // fakeHost writes the cgroup and /proc files of one container.
 func fakeHost(t *testing.T, root, id string, pid, cgPath string) {
 	write(t, filepath.Join(root, "proc", pid, "cgroup"), "0::"+cgPath+"\n")

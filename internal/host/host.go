@@ -23,13 +23,17 @@ const (
 	UpgradeKernel             = "upgrade_kernel"
 	FilesystemNotSupported    = "filesystem_not_supported"
 	RemoteFilesystem          = "remote_filesystem"
+	// Windows: the HatchLens Host service is not reachable, or the volume has
+	// no USN journal.
+	InstallHostService = "install_host_service"
+	EnableUSNJournal   = "enable_usn_journal"
 )
 
 // AdminAction reports whether a reason is fixed by the admin on the host.
 func AdminAction(reason string) bool {
 	switch reason {
 	case EnableProjectQuotaFeature, MountWithPrjquota, XFSv4GroupQuotaConflict, EnableZFSProjectQuota,
-		InstallZFSUserland, UpgradeKernel, FilesystemNotSupported:
+		InstallZFSUserland, UpgradeKernel, FilesystemNotSupported, InstallHostService, EnableUSNJournal:
 		return true
 	}
 	return false

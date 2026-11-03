@@ -187,6 +187,12 @@ func New(socket string) *Client {
 	}
 }
 
+// Dial connects to a Unix socket (Linux) or named pipe (Windows); also for the
+// host service.
+func Dial(socket string) func(ctx context.Context, network, addr string) (net.Conn, error) {
+	return dialer(socket)
+}
+
 // NewWithHTTP uses a custom transport (tests).
 func NewWithHTTP(rt http.RoundTripper) *Client {
 	return &Client{hc: &http.Client{Transport: rt}, stream: &http.Client{Transport: rt}, version: MinAPIVersion}
@@ -304,6 +310,19 @@ func (c *Client) Volumes(ctx context.Context) ([]Volume, error) {
 	}
 	err := c.do(ctx, "/volumes", nil, &r)
 	return r.Volumes, err
+}
+
+// Network is a Docker network; on Windows Options holds the HNS network ID.
+type Network struct {
+	Name    string            `json:"Name"`
+	ID      string            `json:"Id"`
+	Options map[string]string `json:"Options"`
+}
+
+func (c *Client) Networks(ctx context.Context) ([]Network, error) {
+	var r []Network
+	err := c.do(ctx, "/networks", nil, &r)
+	return r, err
 }
 
 func (c *Client) Containers(ctx context.Context) ([]Container, error) {

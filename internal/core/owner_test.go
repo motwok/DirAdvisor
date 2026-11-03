@@ -144,6 +144,16 @@ func TestCommands(t *testing.T) {
 			t.Errorf("%s: %q", reason, got)
 		}
 	}
+	win := hostMount("/C:", "FAT32", "")
+	for reason, want := range map[string]string{
+		"filesystem_not_supported": "to NTFS",
+		"install_host_service":     `\\.\pipe\hatchlens-host`,
+		"enable_usn_journal":       "fsutil usn createjournal",
+	} {
+		if got := command(reason, win, "/C:/data", false); !strings.Contains(got, want) {
+			t.Errorf("%s: %q", reason, got)
+		}
+	}
 }
 
 func TestCommandSteps(t *testing.T) {

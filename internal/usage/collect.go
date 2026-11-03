@@ -6,6 +6,8 @@ import (
 	"errors"
 	"io/fs"
 	"maps"
+	"slices"
+	"strings"
 
 	"github.com/motwok/HatchLens/internal/config"
 	"github.com/motwok/HatchLens/internal/metrics"
@@ -45,8 +47,8 @@ func (c *Core) read(t target, cgroupV2 bool) counters {
 }
 
 // fromStats maps a Windows stats answer. Its network keys are HNS endpoint
-// GUIDs the Docker API does not map to networks, so the network counters are
-// summed per container, without network and interface.
+// IDs; the host service maps them to Docker networks. Without it the network
+// counters are one sum per container, without network and interface.
 func fromStats(t target, v *counters) {
 	st := t.stats
 	if t.nanoCPUs > 0 {
@@ -66,8 +68,14 @@ func fromStats(t target, v *counters) {
 	if t.noNet || len(st.Networks) == 0 {
 		return
 	}
-	var sum ifaceCounters
-	for _, n := range st.Networks {
+	sums := map[string]*ifaceCounters{}
+	for key, n := range st.Networks {
+		name := t.netNames[strings.ToUpper(key)]
+		sum := sums[name]
+		if sum == nil {
+			sum = &ifaceCounters{network: name}
+			sums[name] = sum
+		}
 		for i, x := range [4]uint64{n.RxBytes, n.RxPackets, n.RxErrors, n.RxDropped} {
 			sum.rx[i] += float64(x)
 		}
@@ -75,7 +83,9 @@ func fromStats(t target, v *counters) {
 			sum.tx[i] += float64(x)
 		}
 	}
-	v.nets = []ifaceCounters{sum}
+	for _, name := range slices.Sorted(maps.Keys(sums)) {
+		v.nets = append(v.nets, *sums[name])
+	}
 }
 
 // Collect returns the families of the running functions (cpu, ram, disk, net).
