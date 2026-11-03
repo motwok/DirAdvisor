@@ -165,7 +165,9 @@ func TestInvalid(t *testing.T) {
 		"range order":       "project_ids: { from: 10, to: 10 }",
 		"range zero":        "project_ids: { from: 0, to: 10 }",
 		"range max":         "project_ids: { from: 1, to: 4294967295 }",
-		"unknown function":  "disable: [ cpu ]",
+		"unknown function":  "disable: [ gpu ]",
+		"socket for cpu":    "{ disable: [ volume, image ], docker_socket: \"\" }",
+		"rule own network":  "labels: [ { match: { stack: a }, labels: { network: x } } ]",
 		"socket needed":     "docker_socket: \"\"",
 		"socket for image":  "{ disable: [ volume ], docker_socket: \"\" }",
 		"label name":        "directories: [ { path: /srv, labels: { 1x: a } } ]",
@@ -253,7 +255,7 @@ func TestSource(t *testing.T) {
 }
 
 func TestExpandSettings(t *testing.T) {
-	data := "{ disable: [ volume, image ], rootfs: \"${R}\", docker_socket: \"\" }"
+	data := "{ disable: [ volume, image, cpu, ram, disk, net ], rootfs: \"${R}\", docker_socket: \"\" }"
 	c, err := Parse([]byte(data), env(map[string]string{"R": "/"}), nil)
 	if err != nil || c.Global.RootFS != "/" || c.DockerSocket != "" {
 		t.Fatalf("%+v %v", c, err)

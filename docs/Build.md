@@ -9,6 +9,7 @@
 | `internal/core` | directories: discovery, ownership, labels, project IDs, walks, metrics |
 | `internal/images` | image checks: reconcile, registry checks, comparison, metrics |
 | `internal/images/state` | `images.json` |
+| `internal/usage` | per-container CPU, memory, disk and network: cgroups and `/proc` (Linux), stats API (Windows) |
 | `internal/config` | config source, environment variables, globs |
 | `internal/docker` | read-only Docker API client (Unix socket, Windows named pipe) |
 | `internal/host` | Linux: mounts, `quotactl_fd`, project ID ioctls, walks, ZFS |

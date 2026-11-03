@@ -339,34 +339,14 @@ func stack(l map[string]string) string {
 // labels resolves the additional labels (LBL-5): allowlist, then self-service,
 // then rules; later ones win.
 func (c *Core) labels(cfg *config.Config, ct docker.Container, stk, image, normalized string, local bool) map[string]string {
-	out := map[string]string{}
-	set := func(name, v string) {
-		if !config.ValidLabelName(name) || config.IsImageOwn(name) {
-			if k := ct.Name() + "|" + name; !c.warned[k] {
-				c.warned[k] = true
-				c.log.Warn("label skipped", "container", ct.Name(), "label", name)
-			}
-			return
-		}
-		out[name] = v
-	}
-	for _, l := range cfg.ContainerLabels {
-		if v, ok := ct.Labels[l.From]; ok {
-			set(l.Target("container_label_"), v)
-		}
-	}
-	for k, v := range ct.Labels {
-		if n, ok := strings.CutPrefix(k, labelSelf); ok {
-			set(n, v)
-		}
-	}
 	images := []string{image}
 	if !local {
 		images = append(images, normalized)
 	}
-	name := ct.Name()
-	for k, v := range cfg.RuleLabels(config.Subject{Stack: &stk, Container: &name, Images: images}) {
-		out[k] = v
-	}
-	return out
+	return cfg.ExtraLabels(ct.Name(), ct.Labels, stk, images, config.IsImageOwn, func(name string) {
+		if k := ct.Name() + "|" + name; !c.warned[k] {
+			c.warned[k] = true
+			c.log.Warn("label skipped", "container", ct.Name(), "label", name)
+		}
+	})
 }

@@ -26,14 +26,24 @@ var OwnLabels = []string{"path", "source", "volume", "stack", "owner", "state", 
 // ImageOwnLabels are set by HatchLens on the image metrics.
 var ImageOwnLabels = []string{"container", "image", "reference", "stack", "state", "mode"}
 
+// ContainerOwnLabels are set by HatchLens on the CPU, memory, disk and network metrics.
+var ContainerOwnLabels = []string{"container", "stack", "network", "interface"}
+
 // Functions that can be switched off with disable.
 const (
 	FnDirectory = "directory"
 	FnVolume    = "volume"
 	FnImage     = "image"
+	FnCPU       = "cpu"
+	FnRAM       = "ram"
+	FnDisk      = "disk"
+	FnNet       = "net"
 )
 
-var functions = []string{FnDirectory, FnVolume, FnImage}
+var functions = []string{FnDirectory, FnVolume, FnImage, FnCPU, FnRAM, FnDisk, FnNet}
+
+// ContainerFunctions are the per-container resource functions.
+var ContainerFunctions = []string{FnCPU, FnRAM, FnDisk, FnNet}
 
 // Docker labels HatchLens reads on containers and volumes.
 const (
@@ -88,14 +98,10 @@ func MatchAny(patterns []string, names ...string) bool {
 }
 
 // IsImageOwn reports whether n is an own label of the image metrics.
-func IsImageOwn(n string) bool {
-	for _, o := range ImageOwnLabels {
-		if n == o {
-			return true
-		}
-	}
-	return false
-}
+func IsImageOwn(n string) bool { return slices.Contains(ImageOwnLabels, n) }
+
+// IsContainerOwn reports whether n is an own label of the container resource metrics.
+func IsContainerOwn(n string) bool { return slices.Contains(ContainerOwnLabels, n) }
 
 type Global struct {
 	ListenAddress          string   `yaml:"listen_address"`
@@ -186,6 +192,35 @@ func (m Match) Matches(s Subject) bool {
 	return key(m.Stack, s.Stack, MatchName) && key(m.Container, s.Container, MatchName) &&
 		key(m.Volume, s.Volume, MatchName) && key(m.Path, s.Path, MatchPath) &&
 		(m.Image == "" || MatchAny([]string{m.Image}, s.Images...))
+}
+
+// ExtraLabels resolves the additional labels of a container series: allowlist,
+// then self-service, then rules; later ones win. Names that are invalid or own
+// labels (own) are skipped and reported to skip.
+func (c *Config) ExtraLabels(name string, labels map[string]string, stack string, images []string,
+	own func(string) bool, skip func(label string)) map[string]string {
+	out := map[string]string{}
+	set := func(n, v string) {
+		if !ValidLabelName(n) || own(n) {
+			skip(n)
+			return
+		}
+		out[n] = v
+	}
+	for _, l := range c.ContainerLabels {
+		if v, ok := labels[l.From]; ok {
+			set(l.Target("container_label_"), v)
+		}
+	}
+	for k, v := range labels {
+		if n, ok := strings.CutPrefix(k, LabelSelf); ok {
+			set(n, v)
+		}
+	}
+	for k, v := range c.RuleLabels(Subject{Stack: &stack, Container: &name, Images: images}) {
+		out[k] = v
+	}
+	return out
 }
 
 // RuleLabels returns the labels of all rules matching s, later rules winning.
@@ -359,7 +394,7 @@ func isOwn(n string) bool {
 
 // isAnyOwn: own label of the directory or the image metrics; shared rules and
 // the container allowlist feed both.
-func isAnyOwn(n string) bool { return isOwn(n) || IsImageOwn(n) }
+func isAnyOwn(n string) bool { return isOwn(n) || IsImageOwn(n) || IsContainerOwn(n) }
 
 func checkName(where, n string, own func(string) bool) error {
 	if !ValidLabelName(n) {
@@ -387,21 +422,26 @@ func (c *Config) Enabled(f string) bool {
 	return !slices.Contains(c.Disable, f)
 }
 
-// Runs reports whether a function runs on this platform: on Windows only
-// the image part exists.
+// Runs reports whether a function runs on this platform: on Windows the
+// directory and volume parts do not exist.
 func (c *Config) Runs(f string) bool {
-	return c.Enabled(f) && (!windows || f == FnImage)
+	return c.Enabled(f) && (!windows || f != FnDirectory && f != FnVolume)
+}
+
+// RunsAny reports whether one of fs runs.
+func (c *Config) RunsAny(fs ...string) bool {
+	return slices.ContainsFunc(fs, c.Runs)
 }
 
 func (c *Config) validate(stat StatFunc) error {
 	for _, f := range c.Disable {
 		if !slices.Contains(functions, f) {
-			return fmt.Errorf("disable: unknown function %q, want directory, volume or image", f)
+			return fmt.Errorf("disable: unknown function %q, want one of %s", f, strings.Join(functions, ", "))
 		}
 	}
 	if c.DockerSocket == "" {
 		var need []string
-		for _, f := range []string{FnVolume, FnImage} {
+		for _, f := range []string{FnVolume, FnImage, FnCPU, FnRAM, FnDisk, FnNet} {
 			if c.Runs(f) {
 				need = append(need, f)
 			}

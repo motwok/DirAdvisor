@@ -36,10 +36,23 @@ func fake(api string) *Client {
 			http.Error(w, "all missing", 400)
 			return
 		}
-		io.WriteString(w, `[{"Id":"abc","Names":["/web-1"],"ImageID":"sha256:1","State":"running","Labels":{"a":"b"},"Created":5,"Mounts":[{"Type":"volume","Name":"v","RW":true}]}]`)
+		io.WriteString(w, `[{"Id":"abc","Names":["/web-1"],"ImageID":"sha256:1","State":"running","Labels":{"a":"b"},"Created":5,"Mounts":[{"Type":"volume","Name":"v","RW":true}],`+
+			`"HostConfig":{"NetworkMode":"app_default"},"NetworkSettings":{"Networks":{"app_default":`+
+			`{"EndpointID":"e1","IPAddress":"172.18.0.2","IPPrefixLen":16,"GlobalIPv6Address":"fd00::2","GlobalIPv6PrefixLen":64}}}}]`)
 	})
 	mux.HandleFunc("/v1.41/containers/abc/json", func(w http.ResponseWriter, _ *http.Request) {
-		io.WriteString(w, `{"Id":"abc","Image":"sha256:1","Config":{"Image":"nginx:1.29"}}`)
+		io.WriteString(w, `{"Id":"abc","Image":"sha256:1","Config":{"Image":"nginx:1.29"},"State":{"Pid":42},`+
+			`"HostConfig":{"NanoCpus":500000000,"Memory":1048576}}`)
+	})
+	mux.HandleFunc("/v1.41/containers/abc/stats", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("stream") != "false" || r.URL.Query().Get("one-shot") != "true" {
+			http.Error(w, "query", 400)
+			return
+		}
+		io.WriteString(w, `{"cpu_stats":{"cpu_usage":{"total_usage":30000000}},`+
+			`"memory_stats":{"commitbytes":2048,"privateworkingset":1024},`+
+			`"storage_stats":{"read_size_bytes":1,"write_size_bytes":2,"read_count_normalized":3,"write_count_normalized":4},`+
+			`"networks":{"e1":{"rx_bytes":5,"rx_packets":6,"rx_errors":7,"rx_dropped":8,"tx_bytes":9,"tx_packets":10,"tx_errors":11,"tx_dropped":12}}}`)
 	})
 	mux.HandleFunc("/v1.41/images/sha256:1/json", func(w http.ResponseWriter, _ *http.Request) {
 		io.WriteString(w, `{"Id":"sha256:1","RepoDigests":["nginx@sha256:aa"]}`)
@@ -55,7 +68,7 @@ func fake(api string) *Client {
 		io.WriteString(w, `{"Descriptor":{"digest":"sha256:bb"},"auth":"`+r.Header.Get("X-Registry-Auth")+`"}`)
 	})
 	mux.HandleFunc("/v1.41/events", func(w http.ResponseWriter, r *http.Request) {
-		if !strings.Contains(r.URL.Query().Get("filters"), `"image"`) {
+		if !strings.Contains(r.URL.Query().Get("filters"), `"image"`) || !strings.Contains(r.URL.Query().Get("filters"), `"network"`) {
 			http.Error(w, "filters", 400)
 			return
 		}
@@ -83,11 +96,19 @@ func TestClient(t *testing.T) {
 	}
 	cs, err := c.Containers(ctx)
 	if err != nil || len(cs) != 1 || cs[0].Name() != "web-1" || cs[0].ImageID != "sha256:1" || cs[0].Labels["a"] != "b" ||
-		!cs[0].Mounts[0].RW || cs[0].Created != 5 {
+		!cs[0].Mounts[0].RW || cs[0].Created != 5 || cs[0].HostConfig.NetworkMode != "app_default" ||
+		cs[0].NetworkSettings.Networks["app_default"] != (Endpoint{"e1", "172.18.0.2", 16, "fd00::2", 64}) {
 		t.Fatalf("containers: %v %v", cs, err)
 	}
-	if j, err := c.Container(ctx, "abc"); err != nil || j.Config.Image != "nginx:1.29" || j.Image != "sha256:1" {
+	if j, err := c.Container(ctx, "abc"); err != nil || j.Config.Image != "nginx:1.29" || j.Image != "sha256:1" ||
+		j.State.Pid != 42 || j.HostConfig.NanoCpus != 5e8 || j.HostConfig.Memory != 1<<20 {
 		t.Fatalf("container: %v %v", j, err)
+	}
+	st, err := c.Stats(ctx, "abc")
+	if err != nil || st.CPUStats.CPUUsage.TotalUsage != 3e7 || st.MemoryStats.Commit != 2048 ||
+		st.MemoryStats.PrivateWorkingSet != 1024 || st.StorageStats.Writes != 4 ||
+		st.Networks["e1"] != (NetStats{5, 6, 7, 8, 9, 10, 11, 12}) {
+		t.Fatalf("stats: %+v %v", st, err)
 	}
 	if im, err := c.Image(ctx, "sha256:1"); err != nil || im.ID != "sha256:1" || im.RepoDigests[0] != "nginx@sha256:aa" {
 		t.Fatalf("image: %v %v", im, err)
@@ -178,7 +199,8 @@ func TestCompareVersion(t *testing.T) {
 func TestRelevant(t *testing.T) {
 	for _, e := range []Event{{"container", "create"}, {"container", "start"}, {"container", "stop"},
 		{"container", "die"}, {"container", "destroy"}, {"image", "pull"}, {"image", "tag"},
-		{"image", "untag"}, {"image", "delete"}, {"volume", "create"}, {"volume", "destroy"}} {
+		{"image", "untag"}, {"image", "delete"}, {"volume", "create"}, {"volume", "destroy"},
+		{"network", "connect"}, {"network", "disconnect"}} {
 		if !e.Relevant() {
 			t.Errorf("%v should be relevant", e)
 		}

@@ -55,5 +55,19 @@ WaitFor 120 'target checked' { (Metrics) -match 'hatchlens_container_image_info\
 if ((Metrics) -notmatch 'hatchlens_container_image_update_available\{container="target",') { Fail 'update_available' }
 if ((Metrics) -match 'hatchlens_directory_') { Fail 'directory metrics on Windows' }
 
+Step 'container CPU, memory, disk and network'
+Invoke-Docker run -d --name busy --cpus 1 --memory 512m "mcr.microsoft.com/windows/nanoserver:$Ltsc" ping -t 127.0.0.1 | Out-Null
+WaitFor 120 'CPU of busy' { (Metrics) -match 'hatchlens_container_cpu_usage_seconds_total\{container="busy"\} ' }
+$m = Metrics
+($m -split "`n") | Where-Object { $_ -match '^hatchlens_container_(network_receive_bytes|memory_|cpu_limit|disk_writes)' } | Write-Host
+foreach ($want in 'hatchlens_container_memory_working_set_bytes\{container="busy"\}',
+                  'hatchlens_container_memory_limit_bytes\{container="busy"\} 5\.36870912e\+08',
+                  'hatchlens_container_cpu_limit_cores\{container="busy"\} 1$',
+                  'hatchlens_container_disk_writes_total\{container="busy"\}',
+                  'hatchlens_container_network_receive_bytes_total\{container="busy",interface="[^"]+",network="nat"\}') {
+    if (-not (($m -split "`n") -match $want)) { Fail "missing $want" }
+}
+docker rm -f busy | Out-Null
+
 docker stop -t 10 hatchlens | Out-Null
 Step 'passed'

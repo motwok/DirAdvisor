@@ -44,13 +44,28 @@ type Mount struct {
 }
 
 type Container struct {
-	ID      string            `json:"Id"`
-	Names   []string          `json:"Names"`
-	ImageID string            `json:"ImageID"`
-	Labels  map[string]string `json:"Labels"`
-	State   string            `json:"State"`
-	Created int64             `json:"Created"`
-	Mounts  []Mount           `json:"Mounts"`
+	ID         string            `json:"Id"`
+	Names      []string          `json:"Names"`
+	ImageID    string            `json:"ImageID"`
+	Labels     map[string]string `json:"Labels"`
+	State      string            `json:"State"`
+	Created    int64             `json:"Created"`
+	Mounts     []Mount           `json:"Mounts"`
+	HostConfig struct {
+		NetworkMode string `json:"NetworkMode"`
+	} `json:"HostConfig"`
+	NetworkSettings struct {
+		Networks map[string]Endpoint `json:"Networks"`
+	} `json:"NetworkSettings"`
+}
+
+// Endpoint is a container's attachment to one Docker network.
+type Endpoint struct {
+	EndpointID          string `json:"EndpointID"`
+	IPAddress           string `json:"IPAddress"`
+	IPPrefixLen         int    `json:"IPPrefixLen"`
+	GlobalIPv6Address   string `json:"GlobalIPv6Address"`
+	GlobalIPv6PrefixLen int    `json:"GlobalIPv6PrefixLen"`
 }
 
 // Name is the container name without the leading slash. Legacy links add
@@ -73,6 +88,45 @@ type ContainerJSON struct {
 	Config struct {
 		Image string `json:"Image"`
 	} `json:"Config"`
+	State struct {
+		Pid int `json:"Pid"`
+	} `json:"State"`
+	HostConfig struct {
+		NanoCpus int64 `json:"NanoCpus"`
+		Memory   int64 `json:"Memory"`
+	} `json:"HostConfig"`
+}
+
+// Stats is the part of a one-shot stats answer HatchLens reads (Windows).
+type Stats struct {
+	CPUStats struct {
+		CPUUsage struct {
+			// 100 ns units on Windows.
+			TotalUsage uint64 `json:"total_usage"`
+		} `json:"cpu_usage"`
+	} `json:"cpu_stats"`
+	MemoryStats struct {
+		Commit            uint64 `json:"commitbytes"`
+		PrivateWorkingSet uint64 `json:"privateworkingset"`
+	} `json:"memory_stats"`
+	StorageStats struct {
+		ReadBytes  uint64 `json:"read_size_bytes"`
+		WriteBytes uint64 `json:"write_size_bytes"`
+		Reads      uint64 `json:"read_count_normalized"`
+		Writes     uint64 `json:"write_count_normalized"`
+	} `json:"storage_stats"`
+	Networks map[string]NetStats `json:"networks"`
+}
+
+type NetStats struct {
+	RxBytes   uint64 `json:"rx_bytes"`
+	RxPackets uint64 `json:"rx_packets"`
+	RxErrors  uint64 `json:"rx_errors"`
+	RxDropped uint64 `json:"rx_dropped"`
+	TxBytes   uint64 `json:"tx_bytes"`
+	TxPackets uint64 `json:"tx_packets"`
+	TxErrors  uint64 `json:"tx_errors"`
+	TxDropped uint64 `json:"tx_dropped"`
 }
 
 type Image struct {
@@ -100,6 +154,8 @@ func (e Event) Relevant() bool {
 		case "pull", "tag", "untag", "delete":
 			return true
 		}
+	case "network":
+		return e.Action == "connect" || e.Action == "disconnect"
 	}
 	return false
 }
@@ -262,6 +318,13 @@ func (c *Client) Container(ctx context.Context, id string) (ContainerJSON, error
 	return r, err
 }
 
+// Stats reads one sample of a running container's resource counters.
+func (c *Client) Stats(ctx context.Context, id string) (Stats, error) {
+	var r Stats
+	err := c.do(ctx, "/containers/"+url.PathEscape(id)+"/stats?stream=false&one-shot=true", nil, &r)
+	return r, err
+}
+
 // Image inspects an image by ID or reference; an unknown one is an *APIError with Status 404.
 func (c *Client) Image(ctx context.Context, idOrRef string) (Image, error) {
 	var r Image
@@ -285,9 +348,9 @@ func (c *Client) Distribution(ctx context.Context, ref, auth string) (string, er
 	return r.Descriptor.Digest, err
 }
 
-// Events streams container, image and volume events until ctx ends or the stream breaks.
+// Events streams container, image, volume and network events until ctx ends or the stream breaks.
 func (c *Client) Events(ctx context.Context, fn func(Event)) error {
-	filters := url.QueryEscape(`{"type":["container","image","volume"]}`)
+	filters := url.QueryEscape(`{"type":["container","image","volume","network"]}`)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://docker/v"+c.apiVersion()+"/events?filters="+filters, nil)
 	if err != nil {
 		return err

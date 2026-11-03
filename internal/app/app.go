@@ -24,6 +24,7 @@ import (
 	"github.com/motwok/HatchLens/internal/host"
 	"github.com/motwok/HatchLens/internal/images"
 	"github.com/motwok/HatchLens/internal/metrics"
+	"github.com/motwok/HatchLens/internal/usage"
 )
 
 // Set by -ldflags.
@@ -59,18 +60,20 @@ func NewLogger(level, format string, w io.Writer) *slog.Logger {
 }
 
 // Server holds the running parts. Core (directories) is nil on Windows, Images
-// is nil when the image checks are off.
+// is nil when the image checks are off, Usage when cpu, ram, disk and net are.
 type Server struct {
 	Log      *slog.Logger
 	Core     *core.Core
 	Images   *images.Core
+	Usage    *usage.Core
 	FS       host.FS
 	trigger  chan struct{}
 	itrigger chan struct{}
+	utrigger chan struct{}
 }
 
 func newServer(log *slog.Logger) *Server {
-	return &Server{Log: log, trigger: make(chan struct{}, 1), itrigger: make(chan struct{}, 1)}
+	return &Server{Log: log, trigger: make(chan struct{}, 1), itrigger: make(chan struct{}, 1), utrigger: make(chan struct{}, 1)}
 }
 
 func one(name, help, typ string, v float64) metrics.Family {
@@ -91,6 +94,11 @@ func (s *Server) collect(ctx context.Context) []metrics.Family {
 		d, e := s.Images.Stats()
 		seconds, errs = seconds+d, errs+e
 	}
+	if s.Usage != nil {
+		fams = append(fams, s.Usage.Collect()...)
+		d, e := s.Usage.Stats()
+		seconds, errs = seconds+d, errs+e
+	}
 	var t int64
 	fmt.Sscan(BuildTime, &t)
 	return append(fams,
@@ -103,7 +111,7 @@ func (s *Server) collect(ctx context.Context) []metrics.Family {
 }
 
 func (s *Server) ready() bool {
-	return (s.Core == nil || s.Core.Ready()) && (s.Images == nil || s.Images.Ready())
+	return (s.Core == nil || s.Core.Ready()) && (s.Images == nil || s.Images.Ready()) && (s.Usage == nil || s.Usage.Ready())
 }
 
 // Handler serves /metrics and the lifecycle endpoints (spec section 12).
@@ -178,8 +186,11 @@ func Main(args []string, stderr io.Writer) int {
 	if cfg.Enabled(config.FnImage) {
 		s.Images = images.New(cfg, images.Options{Docker: dc, StorageDir: g.StoragePath, Log: log})
 	}
+	if cfg.RunsAny(config.ContainerFunctions...) {
+		s.Usage = usage.New(cfg, usage.Options{Docker: dc, RootFS: g.RootFS, Windows: runtime.GOOS == "windows", Log: log})
+	}
 	log.Info("starting", "version", Version, "revision", Revision, "listen", g.ListenAddress, "config", src,
-		"directories", s.Core != nil, "images", s.Images != nil)
+		"directories", s.Core != nil, "images", s.Images != nil, "containers", s.Usage != nil)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
@@ -206,7 +217,7 @@ func Main(args []string, stderr io.Writer) int {
 // run starts the loops of both parts and blocks until ctx ends or a part stops
 // with a too old Docker; then it writes the states within 8 seconds.
 func (s *Server) run(ctx context.Context, stop context.CancelFunc) int {
-	codes := make(chan int, 2)
+	codes := make(chan int, 3)
 	done := make(chan struct{}, 2)
 	loops := 0
 	if s.Core != nil {
@@ -219,11 +230,16 @@ func (s *Server) run(ctx context.Context, stop context.CancelFunc) int {
 		go func() { s.Images.RunChecks(ctx); done <- struct{}{} }()
 		go func() { codes <- s.imageLoop(ctx) }()
 	}
+	waits := loops
+	if s.Usage != nil {
+		waits++
+		go func() { codes <- s.usageLoop(ctx) }()
+	}
 	code := 0
-	if loops == 0 {
+	if waits == 0 {
 		<-ctx.Done()
 	}
-	for i := 0; i < loops; i++ {
+	for i := 0; i < waits; i++ {
 		if c := <-codes; c != 0 {
 			code = c
 			stop()
@@ -294,8 +310,28 @@ func (s *Server) imageLoop(ctx context.Context) int {
 	return 0
 }
 
+// usageLoop runs the container reconciles until ctx ends; 1 means the Docker API is too old.
+func (s *Server) usageLoop(ctx context.Context) int {
+	for ctx.Err() == nil {
+		if err := s.Usage.Reconcile(ctx); err != nil {
+			s.Log.Error("unsupported Docker", "err", err)
+			return 1
+		}
+		timer := time.NewTimer(s.Usage.Config().Global.ReconcileInterval.D())
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return 0
+		case <-timer.C:
+		case <-s.utrigger:
+			timer.Stop()
+		}
+	}
+	return 0
+}
+
 func (s *Server) poke() {
-	for _, ch := range []chan struct{}{s.trigger, s.itrigger} {
+	for _, ch := range []chan struct{}{s.trigger, s.itrigger, s.utrigger} {
 		select {
 		case ch <- struct{}{}:
 		default:
