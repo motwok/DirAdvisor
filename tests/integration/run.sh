@@ -90,11 +90,9 @@ CONF="  - path: /mnt/it-ext4/conf
 BIG="  - path: /mnt/it-ext4/big"
 write_config() {
   cat > "$DATA/config.yml" <<EOF
-global:
-  reconcile_interval: 2s
-  walk_files_per_second: ${RATE:-0}
-images:
-  enabled: false                   # covered by run-images.sh
+disable: [ image ]                 # covered by run-images.sh
+reconcile_interval: 2s
+walk_files_per_second: ${RATE:-0}
 directories:
   - path: /mnt/it-ext4
   - path: /mnt/it-xfs/home/*

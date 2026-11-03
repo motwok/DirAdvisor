@@ -99,7 +99,7 @@ func TestVolumeKinds(t *testing.T) {
 	e.volume("bad", nil, map[string]string{"type": "none", "o": "bind", "device": "/var/lib/docker/x"})
 	e.volume("buildx_cache", nil, nil)
 	e.dk.volumes = append(e.dk.volumes, docker.Volume{Name: "plug", Driver: "rexray", Mountpoint: "/mnt/plug"})
-	e.cfg.Docker.Exclude.Volumes = []string{"buildx_*"}
+	e.cfg.Exclude.Volumes = []string{"buildx_*"}
 	e.reconcile()
 	if e.reason("/var/lib/docker/volumes/nfs/_data") != host.RemoteFilesystem ||
 		e.reason("/var/lib/docker/x") != reasonExcludedPath || e.reason("/mnt/plug") != reasonUnsupportedDrv {
@@ -225,7 +225,7 @@ func TestVolumeReleaseAndExclude(t *testing.T) {
 	e.walkAll()
 	e.dk.volumes = e.dk.volumes[2:]
 	delete(e.fs.dirs, "/var/lib/docker/volumes/plain/_data")
-	e.cfg.Docker.Exclude.Volumes = []string{"later"}
+	e.cfg.Exclude.Volumes = []string{"later"}
 	e.reconcile()
 	if _, ok := e.c.st.Entries[state.VolumeKey("plain")]; ok {
 		t.Fatal("plain must be released")
@@ -244,12 +244,12 @@ func TestDockerDisabledKeepsIDs(t *testing.T) {
 	e.volume("v", nil, nil)
 	e.reconcile()
 	e.walkAll()
-	e.cfg.Docker.Enabled = false
+	e.cfg.Disable = []string{config.FnVolume}
 	e.reconcile()
 	if len(e.c.view.entries) != 0 || e.c.st.Entries[state.VolumeKey("v")].PendingReset {
 		t.Fatal("volume must be kept silently")
 	}
-	e.cfg.Docker.Enabled = true
+	e.cfg.Disable = nil
 	e.reconcile()
 	e.walkAll()
 	if len(e.fs.walks) != 1 {
@@ -381,4 +381,75 @@ func TestSave(t *testing.T) {
 		t.Fatal("config")
 	}
 	e.c.Save()
+}
+
+// A volume whose owner container is excluded is excluded and reset like
+// exclude.volumes; a volume the excluded container only mounts stays.
+func TestExcludedOwner(t *testing.T) {
+	e := newEnv(t)
+	e.volume("db", nil, nil)
+	e.volume("shared", nil, nil)
+	e.volume("tagged", nil, nil)
+	e.volume("byimage", nil, nil)
+	e.container("c1", "db1", "running", 1, nil, rw("db"), ro("shared"))
+	e.container("c2", "app", "running", 2, nil, rw("shared"))
+	e.container("c3", "x", "running", 3, map[string]string{config.LabelEnable: "false"}, rw("tagged"))
+	e.container("c4", "cache", "running", 4, nil, rw("byimage"))
+	e.container("c5", "gone", "running", 5, nil)
+	e.dk.configs = map[string]string{"c1": "postgres:16", "c2": "app:1", "c3": "x", "c4": "redis:7"}
+	e.reconcile()
+	e.walkAll()
+	if len(e.c.view.entries) != 3 || e.entry(volPathOf("tagged")) != nil {
+		t.Fatalf("only the enable label excludes at first: %+v", e.c.view.entries)
+	}
+	e.cfg.Exclude = config.Exclude{Containers: []string{"db*"}, Images: []string{"docker.io/library/redis*"}}
+	e.reconcile()
+	for _, v := range []string{"db", "byimage"} {
+		if e.entry(volPathOf(v)) != nil || !e.c.st.Entries[state.VolumeKey(v)].PendingReset {
+			t.Fatalf("%s must be excluded and reset", v)
+		}
+	}
+	if e.entry(volPathOf("shared")) == nil {
+		t.Fatal("shared has another owner and stays")
+	}
+	n := e.dk.inspects
+	e.reconcile()
+	if e.dk.inspects != n+1 {
+		t.Fatal("Config.Image is cached per container ID; only the 404 one is asked again")
+	}
+	e.dk.containers = e.dk.containers[:1]
+	e.reconcile()
+	if len(e.c.cfgImages) != 1 {
+		t.Fatalf("cache not pruned: %v", e.c.cfgImages)
+	}
+	e.dk.inspectErr = errDown
+	e.dk.containers = append(e.dk.containers, docker.Container{ID: "c9", Names: []string{"/new"}})
+	e.c.Reconcile(context.Background())
+	if e.c.recErrors == 0 {
+		t.Fatal("inspect error must fail the reconcile")
+	}
+}
+
+// Disabled directories keep their IDs; rules by stack and path reach them,
+// their own labels win.
+func TestDirectoriesDisabledAndRules(t *testing.T) {
+	e := newEnv(t)
+	e.fs.mkdir("/srv/x")
+	e.cfg.Directories = []config.Directory{{Path: "/srv/x", Labels: map[string]string{"stack": "s", "team": "own"}}}
+	e.cfg.Labels = []config.LabelRule{
+		{Match: config.Match{Stack: "s"}, Labels: map[string]string{"team": "rule", "tier": "cold", "empty": ""}},
+		{Match: config.Match{Path: "/srv/*"}, Labels: map[string]string{"site": "a"}},
+		{Match: config.Match{Volume: "*"}, Labels: map[string]string{"vol": "only"}},
+	}
+	e.reconcile()
+	e.walkAll()
+	got := e.entry("/srv/x").Labels
+	if got["team"] != "own" || got["tier"] != "cold" || got["site"] != "a" || got["vol"] != "" || got["empty"] != "" {
+		t.Fatalf("labels: %v", got)
+	}
+	e.cfg.Disable = []string{config.FnDirectory}
+	e.reconcile()
+	if e.entry("/srv/x") != nil || e.c.st.Entries[state.ConfigKey("/srv/x")].PendingReset {
+		t.Fatal("directory must be kept silently")
+	}
 }

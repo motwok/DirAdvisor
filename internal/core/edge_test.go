@@ -219,8 +219,8 @@ func TestWalkerSkipsAndVanishedEntry(t *testing.T) {
 
 func TestLabelRuleMismatch(t *testing.T) {
 	cfg := config.Default()
-	cfg.Docker.ContainerLabels = []config.LabelRef{{From: "a", To: "renamed"}}
-	cfg.Docker.Labels = []config.LabelRule{
+	cfg.ContainerLabels = []config.LabelRef{{From: "a", To: "renamed"}}
+	cfg.Labels = []config.LabelRule{
 		{Match: config.Match{Stack: "other"}, Labels: map[string]string{"x": "1"}},
 		{Match: config.Match{Path: "/srv/*"}, Labels: map[string]string{"y": "1"}},
 	}

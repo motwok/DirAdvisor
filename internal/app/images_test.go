@@ -50,7 +50,7 @@ func imageServer(t *testing.T, api, cfgText string) *Server {
 }
 
 func TestImagePart(t *testing.T) {
-	s := imageServer(t, "1.47", "global: { reconcile_interval: 5ms }")
+	s := imageServer(t, "1.47", "reconcile_interval: 5ms")
 	h := s.Handler()
 	if code, _ := get(t, h, "GET", "/-/ready"); code != 503 {
 		t.Fatal("ready before reconcile")

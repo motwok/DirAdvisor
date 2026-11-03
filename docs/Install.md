@@ -108,7 +108,7 @@ volumes:
 - `/data` keeps `state.json` (assigned IDs and remembered owners) and `images.json` (registry results and
   since times of the image checks). Keep it across updates.
 - To leave a container out of the image checks, give it the label `de.mo2000.hatchlens.enable=false` or
-  use `images.exclude` in the config. Each check of a Docker Hub image counts as one pull, by default one
+  use `exclude` in the config. Each check of a Docker Hub image counts as one pull, by default one
   per image and day.
 - The default port is **8080** before 1.0 and changes with 1.0, see the README.
 

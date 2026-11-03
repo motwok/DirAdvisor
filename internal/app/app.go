@@ -142,9 +142,11 @@ func Main(args []string, stderr io.Writer) int {
 		cfg, err = config.Parse(data, os.LookupEnv, nil)
 	}
 	var fsys host.FS
-	if err == nil && runtime.GOOS != "windows" {
+	if err == nil && (cfg.Runs(config.FnDirectory) || cfg.Runs(config.FnVolume)) {
 		fsys = host.New(cfg.Global.RootFS)
-		err = cfg.CheckDirectories(fsys.Stat)
+		if cfg.Runs(config.FnDirectory) {
+			err = cfg.CheckDirectories(fsys.Stat)
+		}
 	}
 	if err != nil {
 		NewLogger("info", "logfmt", stderr).Error("invalid config", "source", src, "err", err)
@@ -155,8 +157,8 @@ func Main(args []string, stderr io.Writer) int {
 	s := newServer(log)
 	s.FS = fsys
 	var dc *docker.Client
-	if cfg.Docker.Socket != "" {
-		dc = docker.New(cfg.Docker.Socket)
+	if cfg.DockerSocket != "" {
+		dc = docker.New(cfg.DockerSocket)
 	}
 	if fsys != nil {
 		var dk core.Docker
@@ -172,8 +174,8 @@ func Main(args []string, stderr io.Writer) int {
 			log.Info("ZFS versions", "module", mod, "userland", user)
 		}
 	}
-	// An empty socket switches the image part off, like images.enabled: false.
-	if cfg.Images.Enabled && dc != nil {
+	// An empty socket with the image part on is a config error.
+	if cfg.Enabled(config.FnImage) {
 		s.Images = images.New(cfg, images.Options{Docker: dc, StorageDir: g.StoragePath, Log: log})
 	}
 	log.Info("starting", "version", Version, "revision", Revision, "listen", g.ListenAddress, "config", src,

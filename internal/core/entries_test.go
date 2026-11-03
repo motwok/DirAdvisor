@@ -127,7 +127,7 @@ func TestReadyWithoutDockerClient(t *testing.T) {
 // Labels from the owner container survive the container (LBL-4).
 func TestContainerLabelsKeptWithoutOwner(t *testing.T) {
 	e := newEnv(t)
-	e.cfg.Docker.ContainerLabels = []config.LabelRef{{From: "com.example.team"}}
+	e.cfg.ContainerLabels = []config.LabelRef{{From: "com.example.team"}}
 	e.volume("v", map[string]string{"com.docker.compose.project": "app"}, nil)
 	e.container("c1", "app-web-1", "running", 1, map[string]string{
 		"com.docker.compose.project": "app", "com.example.team": "ops", "de.mo2000.hatchlens.label.tier": "hot",

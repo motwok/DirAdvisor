@@ -54,7 +54,7 @@ func testServer(t *testing.T, cfgText string) *Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg.Docker.Enabled = false
+	cfg.Disable = append(cfg.Disable, config.FnVolume)
 	s := newServer(log)
 	s.FS = fs
 	s.Core = core.New(cfg, core.Options{FS: fs, StorageDir: t.TempDir(), Log: log})
@@ -78,7 +78,7 @@ func get(t *testing.T, h http.Handler, method, p string) (int, string) {
 }
 
 func TestHandler(t *testing.T) {
-	s := testServer(t, "docker: { enabled: false }")
+	s := testServer(t, "disable: [ volume ]")
 	h := s.Handler()
 	if code, _ := get(t, h, "GET", "/-/healthy"); code != 200 {
 		t.Fatal("healthy")
@@ -127,12 +127,12 @@ func TestMainExitCodes(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		file := filepath.Join(dir, "file")
 		os.WriteFile(file, nil, 0o644)
-		t.Setenv("HATCHLENS_CONFIG", "{ global: { rootfs: / }, directories: [ { path: '"+file+"' } ] }")
+		t.Setenv("HATCHLENS_CONFIG", "{ disable: [ volume, image ], docker_socket: '', rootfs: /, directories: [ { path: '"+file+"' } ] }")
 		if code := Main(nil, &errb); code != 1 || !strings.Contains(errb.String(), "not a directory") {
 			t.Fatalf("not a directory: %d", code)
 		}
 	}
-	t.Setenv("HATCHLENS_CONFIG", "{ global: { listen_address: '256.0.0.1:1', storage_path: '"+dir+"' }, docker: { socket: '' } }")
+	t.Setenv("HATCHLENS_CONFIG", "{ disable: [ volume, image ], listen_address: '256.0.0.1:1', storage_path: '"+dir+"', docker_socket: '' }")
 	if code := Main(nil, &errb); code != 1 || !strings.Contains(errb.String(), "listen failed") {
 		t.Fatalf("listen failure: %d", code)
 	}

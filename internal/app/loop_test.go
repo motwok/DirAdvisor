@@ -30,7 +30,7 @@ func (r handlerRT) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func TestLoopEvents(t *testing.T) {
-	s := testServer(t, "docker: { enabled: false }\nglobal: { reconcile_interval: 5ms }")
+	s := testServer(t, "disable: [ volume ]\nreconcile_interval: 5ms")
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan int)
 	go func() { done <- s.loop(ctx) }()
@@ -101,8 +101,8 @@ func TestMainDockerTooOld(t *testing.T) {
 	}
 	os.WriteFile(filepath.Join(root, "sys/module/zfs/version"), []byte("2.2.6\n"), 0o644)
 	cfg := filepath.Join(dir, "c.yml")
-	os.WriteFile(cfg, []byte("global: { listen_address: '127.0.0.1:0', storage_path: '"+dir+"', rootfs: '"+root+"' }\n"+
-		"docker: { socket: '"+sock+"' }\ndirectories: [ { path: /srv } ]\n"), 0o644)
+	os.WriteFile(cfg, []byte("listen_address: '127.0.0.1:0'\nstorage_path: '"+dir+"'\nrootfs: '"+root+"'\n"+
+		"docker_socket: '"+sock+"'\ndirectories: [ { path: /srv } ]\n"), 0o644)
 
 	var errb bytes.Buffer
 	code := Main([]string{"-config", cfg}, &errb)

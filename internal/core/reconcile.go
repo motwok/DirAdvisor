@@ -15,6 +15,7 @@ import (
 	"github.com/motwok/HatchLens/internal/config"
 	"github.com/motwok/HatchLens/internal/docker"
 	"github.com/motwok/HatchLens/internal/host"
+	"github.com/motwok/HatchLens/internal/ref"
 	"github.com/motwok/HatchLens/internal/state"
 )
 
@@ -47,10 +48,20 @@ type snapshot struct {
 	root       string
 	volumes    []docker.Volume
 	containers []docker.Container
+	// excluded are the IDs of containers excluded by exclude.containers,
+	// exclude.images or the enable label.
+	excluded map[string]bool
+}
+
+// excludedOwner reports whether the volume's owner is an excluded container;
+// such a volume is excluded like one in exclude.volumes.
+func (s snapshot) excludedOwner(vol docker.Volume, prev *state.Entry, self string) bool {
+	o := resolveOwner(vol, s.containers, prev, self)
+	return o.OwnerC != nil && s.excluded[o.OwnerC.ID]
 }
 
 func (c *Core) readDocker(ctx context.Context, cfg *config.Config) (snapshot, error) {
-	if !cfg.Docker.Enabled || c.dk == nil {
+	if !cfg.Enabled(config.FnVolume) || c.dk == nil {
 		return snapshot{}, nil
 	}
 	if !c.versionOK {
@@ -78,11 +89,54 @@ func (c *Core) readDocker(ctx context.Context, cfg *config.Config) (snapshot, er
 	if err != nil {
 		return snapshot{}, err
 	}
+	excluded, err := c.excludedContainers(ctx, cfg, cs)
+	if err != nil {
+		return snapshot{}, err
+	}
 	root := info.DockerRootDir
 	if root == "" {
 		root = defaultDockerRoot
 	}
-	return snapshot{ok: true, root: path.Clean(root), volumes: vols, containers: cs}, nil
+	return snapshot{ok: true, root: path.Clean(root), volumes: vols, containers: cs, excluded: excluded}, nil
+}
+
+// excludedContainers applies the container excludes. The reference as written
+// (Config.Image) needs an inspect, done only with exclude.images set and kept
+// per container ID, which never changes its image.
+func (c *Core) excludedContainers(ctx context.Context, cfg *config.Config, cs []docker.Container) (map[string]bool, error) {
+	out := map[string]bool{}
+	seen := map[string]bool{}
+	for _, ct := range cs {
+		seen[ct.ID] = true
+		var images []string
+		if len(cfg.Exclude.Images) > 0 {
+			written, ok := c.cfgImages[ct.ID]
+			if !ok {
+				j, err := c.dk.Container(ctx, ct.ID)
+				if docker.IsNotFound(err) {
+					continue
+				}
+				if err != nil {
+					return nil, err
+				}
+				written = j.Config.Image
+				c.cfgImages[ct.ID] = written
+			}
+			images = []string{written}
+			if !ref.IsImageID(written, ct.ImageID) {
+				images = append(images, ref.Parse(written).String())
+			}
+		}
+		if cfg.ExcludedContainer(ct.Name(), ct.Labels, images...) {
+			out[ct.ID] = true
+		}
+	}
+	for id := range c.cfgImages {
+		if !seen[id] {
+			delete(c.cfgImages, id)
+		}
+	}
+	return out, nil
 }
 
 // Reconcile runs one discovery and assignment pass. It returns ErrDockerTooOld
@@ -112,7 +166,7 @@ func (c *Core) Reconcile(ctx context.Context) error {
 		c.dockerRoot, c.st.DockerRoot = snap.root, snap.root
 	}
 	root := c.dockerRoot
-	c.rootKnown = !cfg.Docker.Enabled || c.dk == nil || root != ""
+	c.rootKnown = !cfg.Enabled(config.FnVolume) || c.dk == nil || root != ""
 
 	cands, protected, excludedVols := c.candidates(cfg, snap, root)
 	c.dedupe(cands)
@@ -221,7 +275,7 @@ func (c *Core) Reconcile(ctx context.Context) error {
 	c.setResetTargets(v.entries)
 	c.view = v
 	c.logActions(cfg, now)
-	if snap.ok || !cfg.Docker.Enabled || c.dk == nil {
+	if snap.ok || !cfg.Enabled(config.FnVolume) || c.dk == nil {
 		c.ready = true
 	}
 	c.saveLocked()
@@ -288,26 +342,27 @@ func hasBindOption(o string) bool {
 
 // candidates lists all wanted entries. protected are state keys that must not
 // be released (glob with missing parent); excludedVols are existing volumes
-// matching docker.exclude.volumes.
+// matching exclude.volumes or owned by an excluded container.
 func (c *Core) candidates(cfg *config.Config, snap snapshot, root string) ([]*candidate, map[string]bool, map[string]bool) {
 	var out []*candidate
 	protected := map[string]bool{}
 	excludedVols := map[string]bool{}
 	order := 0
-	if cfg.Docker.Enabled && snap.ok {
+	if cfg.Enabled(config.FnVolume) && snap.ok {
 		volDir := path.Join(root, "volumes")
 		for i := range snap.volumes {
 			vol := &snap.volumes[i]
-			if excludedVolume(cfg, vol.Name) {
+			key := state.VolumeKey(vol.Name)
+			if excludedVolume(cfg, vol.Name) || snap.excludedOwner(*vol, c.st.Entries[key], c.self) {
 				excludedVols[vol.Name] = true
 				continue
 			}
 			p, bind, reason := volumeKind(*vol, volDir, root)
-			out = append(out, &candidate{key: state.VolumeKey(vol.Name), source: state.SourceVolume, name: vol.Name,
+			out = append(out, &candidate{key: key, source: state.SourceVolume, name: vol.Name,
 				path: p, bind: bind, vol: vol, created: vol.CreatedAt, order: order, reason: reason})
 			order++
 		}
-	} else if cfg.Docker.Enabled {
+	} else if cfg.Enabled(config.FnVolume) {
 		// Docker unreachable: keep measuring volumes from the state (DIS-13).
 		for k, e := range c.st.Entries {
 			if e.Source == state.SourceVolume && !e.PendingReset {
@@ -318,9 +373,14 @@ func (c *Core) candidates(cfg *config.Config, snap snapshot, root string) ([]*ca
 			}
 		}
 	}
-	for _, d := range cfg.Directories {
+	dirs := cfg.Directories
+	if !cfg.Enabled(config.FnDirectory) {
+		dirs = nil
+	}
+	for _, d := range dirs {
 		if !strings.Contains(d.Path, "*") {
 			stack, owner, extra := directoryLabels(d.Labels, nil)
+			extra = withRules(cfg, stack, d.Path, extra)
 			cd := &candidate{key: state.ConfigKey(d.Path), source: state.SourceConfig, path: d.Path, pattern: d.Path,
 				order: order, stack: stack, owner: owner, labels: extra}
 			if config.Excluded(d.Path, root) {
@@ -354,6 +414,7 @@ func (c *Core) candidates(cfg *config.Config, snap snapshot, root string) ([]*ca
 				continue
 			}
 			stack, owner, extra := directoryLabels(d.Labels, m.Captures)
+			extra = withRules(cfg, stack, m.Path, extra)
 			out = append(out, &candidate{key: state.ConfigKey(m.Path), source: state.SourceConfig, path: m.Path,
 				pattern: d.Path, order: order, stack: stack, owner: owner, labels: extra})
 			order++
@@ -363,7 +424,7 @@ func (c *Core) candidates(cfg *config.Config, snap snapshot, root string) ([]*ca
 }
 
 func excludedVolume(cfg *config.Config, name string) bool {
-	for _, p := range cfg.Docker.Exclude.Volumes {
+	for _, p := range cfg.Exclude.Volumes {
 		if config.MatchName(p, name) {
 			return true
 		}
@@ -428,7 +489,7 @@ func (c *Core) release(cfg *config.Config, snap snapshot, cands []*candidate, pr
 		}
 		switch e.Source {
 		case state.SourceVolume:
-			if !cfg.Docker.Enabled || !snap.ok {
+			if !cfg.Enabled(config.FnVolume) || !snap.ok {
 				continue
 			}
 			exists, _ := c.fs.Stat(e.Path)
@@ -441,6 +502,10 @@ func (c *Core) release(cfg *config.Config, snap snapshot, cands []*candidate, pr
 				delete(c.st.Entries, k)
 			}
 		case state.SourceConfig:
+			// Disabled: IDs stay, nothing is reset (like volumes, DIS-5a).
+			if !cfg.Enabled(config.FnDirectory) {
+				continue
+			}
 			exists, _ := c.fs.Stat(e.Path)
 			switch {
 			case exists:

@@ -124,7 +124,7 @@ log has the exact command); `hatchlens_container_image_update_available` (labels
 > Before 1.0, HatchLens serves `/metrics` on port **8080** (the same default as cAdvisor). With 1.0 the
 > default changes to a port registered in the Prometheus
 > [default port allocations](https://github.com/prometheus/prometheus/wiki/Default-port-allocations).
-> If you depend on the port, set it explicitly with `global.listen_address`, and update your Prometheus
+> If you depend on the port, set it explicitly with `listen_address`, and update your Prometheus
 > scrape configuration when you move to 1.0.
 
 ## Releases

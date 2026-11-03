@@ -97,10 +97,9 @@ func TestUpdateFlow(t *testing.T) {
 
 func TestModes(t *testing.T) {
 	r := newRig(t, `
-images:
-  exclude:
-    containers: [ "skip-*" ]
-    images: [ "ghcr.io/hidden/*", "sha256:dead*" ]
+exclude:
+  containers: [ "skip-*" ]
+  images: [ "ghcr.io/hidden/*", "sha256:dead*" ]
 `)
 	id := "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	r.f.add("pinned", "nginx@sha256:pin", "sha256:p", "exited", nil)
@@ -199,17 +198,20 @@ func TestSwarmStartFirst(t *testing.T) {
 
 func TestLabels(t *testing.T) {
 	r := newRig(t, `
-images:
- container_labels:
-  - com.example.team
-  - { from: com.example.owner, to: owner }
- labels:
-  - match: { stack: "mail*" }
-    labels: { team: mail, tier: a }
-  - match: { container: "web", image: "docker.io/library/nginx:*" }
-    labels: { tier: b }
-  - match: { image: "nothing" }
-    labels: { tier: c }
+container_labels:
+ - com.example.team
+ - { from: com.example.owner, to: owner_team }
+labels:
+ - match: { stack: "mail*" }
+   labels: { team: mail, tier: a }
+ - match: { container: "web", image: "docker.io/library/nginx:*" }
+   labels: { tier: b }
+ - match: { image: "nothing" }
+   labels: { tier: c }
+ - match: { volume: "*" }
+   labels: { tier: d }
+ - match: { path: "/*" }
+   labels: { tier: e }
 `)
 	r.f.add("web", "nginx:1", "sha256:a", "running", map[string]string{
 		"com.docker.compose.project": "mailcow", "com.example.team": "x", "com.example.owner": "o",
@@ -220,7 +222,7 @@ images:
 	r.checkAll()
 	r.reconcile()
 	r.reconcile()
-	r.has(`hatchlens_container_image_update_available{container="web",container_label_com_example_team="x",env="prod",image="nginx:1",owner="o",stack="mailcow",team="mail",tier="b"} 0`)
+	r.has(`hatchlens_container_image_update_available{container="web",container_label_com_example_team="x",env="prod",image="nginx:1",owner_team="o",stack="mailcow",team="mail",tier="b"} 0`)
 	if n := strings.Count(r.log.String(), "label skipped"); n != 2 {
 		t.Fatalf("warnings: %d\n%s", n, r.log.String())
 	}

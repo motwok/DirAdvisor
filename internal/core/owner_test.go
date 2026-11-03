@@ -88,9 +88,9 @@ func TestOwnerSelf(t *testing.T) {
 
 func TestLabels(t *testing.T) {
 	cfg := config.Default()
-	cfg.Docker.ContainerLabels = []config.LabelRef{{From: "com.example.team"}, {From: "x", To: "renamed"}}
-	cfg.Docker.VolumeLabels = []config.LabelRef{{From: "retention"}}
-	cfg.Docker.Labels = []config.LabelRule{
+	cfg.ContainerLabels = []config.LabelRef{{From: "com.example.team"}, {From: "x", To: "renamed"}}
+	cfg.VolumeLabels = []config.LabelRef{{From: "retention"}}
+	cfg.Labels = []config.LabelRule{
 		{Match: config.Match{Stack: "app"}, Labels: map[string]string{"team": "rule"}},
 		{Match: config.Match{Volume: "nomatch"}, Labels: map[string]string{"never": "x"}},
 		{Match: config.Match{Container: "app-*", Path: "/var/lib/docker/volumes/*/_data"}, Labels: map[string]string{"tier": "hot"}},
