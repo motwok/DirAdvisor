@@ -97,7 +97,7 @@ func (c *Core) readDocker(ctx context.Context, cfg *config.Config) (snapshot, er
 	if root == "" {
 		root = defaultDockerRoot
 	}
-	return snapshot{ok: true, root: path.Clean(root), volumes: vols, containers: cs, excluded: excluded}, nil
+	return snapshot{ok: true, root: path.Clean(config.Host(root)), volumes: vols, containers: cs, excluded: excluded}, nil
 }
 
 // excludedContainers applies the container excludes. The reference as written
@@ -313,22 +313,22 @@ func (c *Core) lastState(key string) string {
 }
 
 func volumeKind(v docker.Volume, volDir, root string) (p string, bind bool, reason string) {
-	typ := v.Options["type"]
+	typ, mp := v.Options["type"], path.Clean(config.Host(v.Mountpoint))
 	switch {
 	case v.Driver != "local":
-		return path.Clean(v.Mountpoint), false, reasonUnsupportedDrv
+		return mp, false, reasonUnsupportedDrv
 	case typ == "nfs" || typ == "nfs4" || typ == "cifs":
-		return path.Clean(v.Mountpoint), false, host.RemoteFilesystem
+		return mp, false, host.RemoteFilesystem
 	case typ == "none" && hasBindOption(v.Options["o"]) && v.Options["device"] != "":
-		p = path.Clean(v.Options["device"])
+		p = path.Clean(config.Host(v.Options["device"]))
 		if config.Excluded(p, root) {
 			return p, true, reasonExcludedPath
 		}
 		return p, true, ""
-	case typ == "" && strings.HasPrefix(path.Clean(v.Mountpoint), volDir+"/"):
-		return path.Clean(v.Mountpoint), false, ""
+	case typ == "" && strings.HasPrefix(mp, volDir+"/"):
+		return mp, false, ""
 	}
-	return path.Clean(v.Mountpoint), false, reasonUnsupportedDrv
+	return mp, false, reasonUnsupportedDrv
 }
 
 func hasBindOption(o string) bool {
@@ -667,7 +667,14 @@ func command(reason string, m host.Mount, p string, docker bool) string {
 	case host.UpgradeKernel:
 		return "upgrade the kernel to 5.14 or newer"
 	case host.FilesystemNotSupported:
+		if config.NativePath(m.Point) != m.Point {
+			return fmt.Sprintf("move %s to NTFS, or stop measuring it (%s is %s)", config.Display(p), config.Display(m.Point), m.FSType)
+		}
 		return fmt.Sprintf("move %s to ext4, XFS or ZFS, or stop measuring it (%s is %s)", p, m.Point, m.FSType)
+	case host.InstallHostService:
+		return `install the HatchLens Host service on the Windows host (hatchlens-host MSI of the release) and mount \\.\pipe\hatchlens-host into the container`
+	case host.EnableUSNJournal:
+		return fmt.Sprintf("fsutil usn createjournal m=0x2000000 a=0x400000 %s", config.Display(m.Point))
 	}
 	return ""
 }

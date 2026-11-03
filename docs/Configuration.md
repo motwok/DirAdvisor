@@ -37,6 +37,7 @@ log_format: logfmt                 # logfmt or json
 storage_path: /data                # directory of state.json and images.json; Windows C:\data
 rootfs: /host                      # where the host root filesystem is mounted
 docker_socket: /var/run/docker.sock   # Windows \\.\pipe\docker_engine
+host_socket: \\.\pipe\hatchlens-host     # Windows only: the HatchLens Host service
 reconcile_interval: 60s            # discovery, ownership, ID assignment, image comparison; also on Docker events
 admin_action_log_interval: 1h      # repeat pending admin actions in the log
 walk_files_per_second: 0           # limit for the project ID walks, 0 = no limit, max 1000000000 (always idle I/O)
@@ -64,7 +65,7 @@ labels:                            # static labels by rule, applied in order
   - match: { path: "/srv/*" }               # volumes and directories
     labels: { tier: cold }
 
-directories:                       # not on Windows
+directories:                       # Windows: host paths like C:\data, through the host service
   - path: /srv/backup
     labels: { stack: backup, owner: borg, tier: cold }   # win over rules
   - path: /home/*                  # every match is its own entry
@@ -95,8 +96,10 @@ All functions except `directory` need the Docker socket. An empty `docker_socket
 not disabled is an error ("docker_socket is empty, but volume, image, cpu, ram, disk, net need it; add
 them to disable"), so a forgotten socket mount does not go unnoticed.
 
-On Windows there is no directory measuring: `directory` and `volume` count as disabled, and
-`directories` is an error there.
+On Windows `directory` and `volume` go through the HatchLens Host service on the host (see
+[Install.md](Install.md#windows)) at `host_socket`. An empty `host_socket` while one of them is not
+disabled is an error. Without the service running, the entries show the admin action
+`install_host_service`.
 
 Excluded containers (`exclude.containers`, `exclude.images`, label `de.mo2000.hatchlens.enable=false`)
 get no usage metrics either. The rules under `labels`, the self-service labels and `container_labels`

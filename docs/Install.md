@@ -6,7 +6,7 @@
 4. Optional: add directories outside Docker volumes to the config file.
 
 The image update checks of all containers need none of this: they only use the Docker socket and are on
-by default (see [Configuration.md](Configuration.md#image-checks)). On Windows only they run, see
+by default (see [Configuration.md](Configuration.md#image-checks)). For Windows hosts see
 [Windows](#windows).
 
 ## Requirements
@@ -178,9 +178,22 @@ mount a host directory at `/data` instead of the named volume. Restart the conta
 ## Windows
 
 Docker hosts with Windows containers (Windows Server 2022 and 2025; a Server 2019 variant is built but
-not tested) run the image checks only; directories are not measured there. The same image tag works:
-Docker picks the variant for the host's Windows version. The named pipe is mounted instead of the
-socket:
+not tested). The same image tag works: Docker picks the variant for the host's Windows version.
+
+A Windows container cannot see the host's file systems or its network stack, so two things need the
+**HatchLens Host** service on the host:
+
+- sizes of Docker volumes and configured directories (NTFS, from one walk plus the USN journal);
+- traffic per Docker network (the Docker stats API names networks only by an HNS endpoint ID).
+
+Without it the image checks and the per-container CPU, memory, disk and network sums still work, and
+the volumes are reported with the admin action `install_host_service`.
+
+1. Install `hatchlens-host-X.Y.Z.msi` from the [release](https://github.com/motwok/HatchLens/releases)
+   on the host (`msiexec /i hatchlens-host-X.Y.Z.msi /qn`). It installs the service `HatchLensHost`
+   (runs as LocalSystem, starts automatically) and has no configuration: the container tells it which
+   directories to measure. Its log is `%ProgramData%\HatchLens\hatchlens-host.log`.
+2. Mount both named pipes into the container:
 
 ```yaml
 services:
@@ -192,9 +205,12 @@ services:
       - type: npipe
         source: \\.\pipe\docker_engine
         target: \\.\pipe\docker_engine
+      - type: npipe                    # HatchLens Host service
+        source: \\.\pipe\hatchlens-host
+        target: \\.\pipe\hatchlens-host
       - type: volume
         source: hatchlens-data
-        target: C:\data                # images.json, config.yml if used
+        target: C:\data                # state.json, images.json, config.yml if used
     ports:
       - "8080:8080"                    # default port before 1.0, changes with 1.0
     # environment:
@@ -203,8 +219,13 @@ volumes:
   hatchlens-data:
 ```
 
-- The image runs as `ContainerAdministrator`, because the Docker pipe is open to administrators only.
-- No capabilities, no `privileged` and no host paths besides the pipe are needed.
+- The image runs as `ContainerAdministrator`, because both pipes are open to administrators only.
+- No capabilities, no `privileged` and no host paths besides the pipes are needed.
+- Configured directories are host paths like `C:\data\archive` and are reported in that form.
+- The NTFS volume needs a USN journal (on by default for the system drive); otherwise the admin action
+  `enable_usn_journal` gives the `fsutil usn createjournal` command.
+- Updating the MSI keeps the service; after a reinstall the container registers its directories again.
+- To remove it: `msiexec /x hatchlens-host-X.Y.Z.msi /qn`.
 
 ## Update and rollback
 

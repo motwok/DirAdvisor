@@ -52,7 +52,7 @@ All metrics have the prefix `hatchlens_`; all are gauges except `reconcile_error
 | `enable_zfs_project_quota` | pool feature off | `zpool set feature@project_quota=enabled <pool>` |
 | `install_zfs_userland` | no `zfs`/`zpool` on the host | install the ZFS tools |
 | `upgrade_kernel` | kernel older than 5.14 | upgrade the kernel |
-| `filesystem_not_supported` | not ext4, XFS or ZFS | move the data or stop measuring it |
+| `filesystem_not_supported` | not ext4, XFS or ZFS (Windows: not NTFS) | move the data or stop measuring it |
 | `remote_filesystem` | NFS/CIFS | not measurable (no admin action) |
 | `unsupported_volume_driver` | volume driver other than `local` | not measurable |
 | `foreign_project_id` | directory already has someone else's project ID | see [Troubleshooting.md](Troubleshooting.md#foreign_project_id) |
@@ -62,6 +62,8 @@ All metrics have the prefix `hatchlens_`; all are gauges except `reconcile_error
 | `project_ids_exhausted` | no free ID in `project_ids` | widen the range |
 | `quota_access_failed` | the quota state or usage of the filesystem could not be read | see [Troubleshooting.md](Troubleshooting.md#quota_access_failed) |
 | `docker_root_unknown` | Docker never answered since the first start, so its data directory is unknown | make the Docker socket reachable, or add `volume` to `disable` |
+| `install_host_service` | Windows: the HatchLens Host service is not reachable | install its MSI and mount its pipe, see [Install.md](Install.md#windows) |
+| `enable_usn_journal` | Windows: the NTFS volume has no USN journal | `fsutil usn createjournal m=0x2000000 a=0x400000 C:` |
 
 ## Image checks: containers
 
@@ -147,8 +149,12 @@ network) and `interface`.
 - Linux reads the counters at scrape time from the host's cgroup v2 files and `/proc` (via `rootfs`);
   the interface is mapped to its Docker network by the container's routes and addresses. cgroup v1
   hosts get only the network metrics. Windows takes the values from the Docker stats API, polled every
-  `reconcile_interval`; there the network counters are one sum per container, without `network` and
-  `interface`, because Docker does not tell which endpoint belongs to which network.
+  `reconcile_interval`. The stats API names each network by an HNS endpoint ID; the HatchLens Host
+  service maps it to the Docker network, so the series carry `network` (no `interface`). Without the
+  service the network counters are one sum per container.
+- Windows sizes come from the HatchLens Host service: allocated bytes of the files and the number of
+  files and directories, each counted for the innermost measured directory, like a project ID on
+  Linux. `project_id` is an ID the service uses for the tree.
 
 ```promql
 # CPU cores used per container

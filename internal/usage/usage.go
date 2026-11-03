@@ -40,8 +40,11 @@ type Options struct {
 	RootFS string
 	// Windows polls the stats API instead of reading cgroups and /proc.
 	Windows bool
-	Log     *slog.Logger
-	Now     func() time.Time
+	// NetNames maps the Windows stats network keys to Docker network names
+	// (through the HatchLens Host service); nil: one sum per container.
+	NetNames func(ctx context.Context) (map[string]string, error)
+	Log      *slog.Logger
+	Now      func() time.Time
 }
 
 type network struct {
@@ -58,6 +61,8 @@ type target struct {
 	networks           []network
 	nanoCPUs, memLimit int64
 	stats              *docker.Stats
+	// netNames: Windows stats network key -> Docker network; nil: unknown.
+	netNames map[string]string
 }
 
 type inspected struct {
@@ -67,13 +72,14 @@ type inspected struct {
 }
 
 type Core struct {
-	mu      sync.Mutex
-	cfg     *config.Config
-	dk      Docker
-	root    string
-	windows bool
-	log     *slog.Logger
-	now     func() time.Time
+	mu       sync.Mutex
+	cfg      *config.Config
+	dk       Docker
+	root     string
+	windows  bool
+	netNames func(ctx context.Context) (map[string]string, error)
+	log      *slog.Logger
+	now      func() time.Time
 	// selfPID is the own PID in the own PID namespace (replaced in tests).
 	selfPID func() int
 
@@ -99,7 +105,7 @@ func New(cfg *config.Config, o Options) *Core {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
-	return &Core{cfg: cfg, dk: o.Docker, root: o.RootFS, windows: o.Windows, log: o.Log, now: o.Now,
+	return &Core{cfg: cfg, dk: o.Docker, root: o.RootFS, windows: o.Windows, netNames: o.NetNames, log: o.Log, now: o.Now,
 		selfPID: os.Getpid, cache: map[string]inspected{}, warned: map[string]bool{}}
 }
 
@@ -179,6 +185,12 @@ func (c *Core) observe(ctx context.Context) ([]target, error) {
 	if err != nil {
 		return nil, err
 	}
+	var names map[string]string
+	if c.windows && c.netNames != nil {
+		if names, err = c.netNames(ctx); err != nil {
+			c.log.Debug("network names unknown", "err", err)
+		}
+	}
 	seen := map[string]bool{}
 	var out []target
 	for _, ct := range cs {
@@ -220,7 +232,7 @@ func (c *Core) observe(ctx context.Context) ([]target, error) {
 			if err != nil {
 				c.log.Debug("container stats failed", "container", t.name, "err", err)
 			} else {
-				t.stats = &st
+				t.stats, t.netNames = &st, names
 			}
 		}
 		out = append(out, t)

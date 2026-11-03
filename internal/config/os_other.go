@@ -5,6 +5,7 @@
 package config
 
 const (
-	windows        = false
-	defaultStorage = "/data"
+	windows           = false
+	defaultStorage    = "/data"
+	defaultHostSocket = ""
 )

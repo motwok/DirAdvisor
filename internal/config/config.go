@@ -59,6 +59,7 @@ type Config struct {
 	VolumeLabels    []LabelRef  `yaml:"volume_labels"`
 	Labels          []LabelRule `yaml:"labels"`
 	DockerSocket    string      `yaml:"docker_socket"`
+	HostSocket      string      `yaml:"host_socket"`
 	Directories     []Directory `yaml:"directories"`
 	Images          Images      `yaml:"images"`
 }
@@ -268,6 +269,7 @@ func Default() *Config {
 			ProjectIDs:             IDRange{From: 100000, To: 199999},
 		},
 		DockerSocket: docker.DefaultSocket,
+		HostSocket:   defaultHostSocket,
 		Images:       Images{CheckInterval: Duration(24 * time.Hour), ForgetAfter: Duration(168 * time.Hour)},
 	}
 }
@@ -334,6 +336,7 @@ func (c *Config) expand(lookup LookupFunc) error {
 	ex("storage_path", &g.StoragePath)
 	ex("rootfs", &g.RootFS)
 	ex("docker_socket", &c.DockerSocket)
+	ex("host_socket", &c.HostSocket)
 	for _, l := range []struct {
 		name string
 		list []string
@@ -416,16 +419,15 @@ func checkLabelName(where, n string, allowStackOwner bool) error {
 	return nil
 }
 
-// Enabled reports whether a function is not in disable. On Windows the app
-// starts only the image part (Runs).
+// Enabled reports whether a function is not in disable.
 func (c *Config) Enabled(f string) bool {
 	return !slices.Contains(c.Disable, f)
 }
 
-// Runs reports whether a function runs on this platform: on Windows the
-// directory and volume parts do not exist.
+// Runs reports whether a function runs; every enabled function runs, on
+// Windows the directory and volume parts through the host service.
 func (c *Config) Runs(f string) bool {
-	return c.Enabled(f) && (!windows || f != FnDirectory && f != FnVolume)
+	return c.Enabled(f)
 }
 
 // RunsAny reports whether one of fs runs.
@@ -450,6 +452,17 @@ func (c *Config) validate(stat StatFunc) error {
 			return fmt.Errorf("docker_socket is empty, but %s need it; add them to disable", strings.Join(need, ", "))
 		}
 	}
+	if windows && c.HostSocket == "" {
+		var need []string
+		for _, f := range []string{FnDirectory, FnVolume} {
+			if c.Runs(f) {
+				need = append(need, f)
+			}
+		}
+		if len(need) > 0 {
+			return fmt.Errorf("host_socket is empty, but %s need it; add them to disable", strings.Join(need, ", "))
+		}
+	}
 	g := c.Global
 	switch g.LogLevel {
 	case "debug", "info", "warn", "error":
@@ -461,9 +474,6 @@ func (c *Config) validate(stat StatFunc) error {
 	}
 	if g.ReconcileInterval <= 0 || g.AdminActionLogInterval <= 0 {
 		return errors.New("durations must be greater than 0")
-	}
-	if windows && len(c.Directories) > 0 {
-		return errors.New("directories: not supported on Windows")
 	}
 	if err := c.Images.validate(); err != nil {
 		return err
@@ -512,7 +522,7 @@ func (c *Config) validate(stat StatFunc) error {
 				return err
 			}
 		}
-		p := d.Path
+		p := Host(d.Path)
 		if !path.IsAbs(p) {
 			return fmt.Errorf("%s: path %q is not absolute", where, p)
 		}
@@ -586,7 +596,7 @@ var excludedTrees = []string{"/var/lib/docker", "/var/lib/containerd", "/proc", 
 
 // Excluded reports whether a host path hits the built-in exclusion list.
 func Excluded(p, dockerRoot string) bool {
-	return path.Clean(p) == "/" || excludedTree(p, dockerRoot)
+	return path.Clean(p) == "/" || driveRoot(path.Clean(p)) || excludedTree(p, dockerRoot)
 }
 
 func excludedTree(p, dockerRoot string) bool {
