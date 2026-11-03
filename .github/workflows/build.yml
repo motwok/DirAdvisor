@@ -163,9 +163,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
           wix build packaging/windows/hatchlens-host.wxs -arch x64 -d Version=0.0.1 -d Exe=dist/hatchlens-host.exe -o dist/hatchlens-host.msi
           if ($LASTEXITCODE -ne 0) { exit 1 }
+          go build -trimpath -o dist/hatchlens-svc.exe ./cmd/hatchlens
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          wix build packaging/windows/hatchlens.wxs -arch x64 -d Version=0.0.1 -d Exe=dist/hatchlens-svc.exe -o dist/hatchlens.msi
+          if ($LASTEXITCODE -ne 0) { exit 1 }
       - name: Integration test
         shell: pwsh
-        run: tests/integration/run-windows.ps1 hatchlens:test "$PWD\cover-integration" ${{ matrix.ltsc }} "$PWD\dist\hatchlens-host.msi" "$PWD\dist\hatchlens-host-cover.exe"
+        run: tests/integration/run-windows.ps1 hatchlens:test "$PWD\cover-integration" ${{ matrix.ltsc }} "$PWD\dist\hatchlens-host.msi" "$PWD\dist\hatchlens-host-cover.exe" "$PWD\dist\hatchlens.msi"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -390,7 +394,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ steps.go.outputs.version }}
-      - name: Build the MSI and attach it to the release
+      - name: Build the MSIs and attach them to the release
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -399,10 +403,16 @@ jobs:
           $env:CGO_ENABLED = '0'
           go build -trimpath -ldflags "-s -w -X github.com/motwok/HatchLens/internal/winhost.Version=$env:VERSION" -o dist/hatchlens-host.exe ./cmd/hatchlens-host
           if ($LASTEXITCODE -ne 0) { exit 1 }
+          $rev = git rev-parse HEAD
+          $built = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+          go build -trimpath -ldflags "-s -w -X github.com/motwok/HatchLens/internal/app.Version=$env:VERSION -X github.com/motwok/HatchLens/internal/app.Revision=$rev -X github.com/motwok/HatchLens/internal/app.BuildTime=$built" -o dist/hatchlens.exe ./cmd/hatchlens
+          if ($LASTEXITCODE -ne 0) { exit 1 }
           dotnet tool install --global wix --version 5.0.2
           if ($LASTEXITCODE -ne 0) { exit 1 }
-          $msi = "dist/hatchlens-host-$env:VERSION.msi"
-          wix build packaging/windows/hatchlens-host.wxs -arch x64 -d "Version=$env:VERSION" -d Exe=dist/hatchlens-host.exe -o $msi
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-          gh release upload "v$env:VERSION" $msi --clobber
-          if ($LASTEXITCODE -ne 0) { exit 1 }
+          foreach ($p in @(@('hatchlens-host', 'dist/hatchlens-host.exe'), @('hatchlens', 'dist/hatchlens.exe'))) {
+            $msi = "dist/$($p[0])-$env:VERSION.msi"
+            wix build "packaging/windows/$($p[0]).wxs" -arch x64 -d "Version=$env:VERSION" -d "Exe=$($p[1])" -o $msi
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+            gh release upload "v$env:VERSION" $msi --clobber
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          }

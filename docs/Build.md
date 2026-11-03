@@ -51,6 +51,16 @@ dotnet tool install --global wix --version 5.0.2
 wix build packaging/windows/hatchlens-host.wxs -arch x64 -d Version=0.0.1 -d Exe=dist/hatchlens-host.exe -o dist/hatchlens-host.msi
 ```
 
+HatchLens itself as a Windows service, from the same `hatchlens.exe` as in the image:
+
+```powershell
+go build -trimpath -o dist/hatchlens.exe ./cmd/hatchlens
+wix build packaging/windows/hatchlens.wxs -arch x64 -d Version=0.0.1 -d Exe=dist/hatchlens.exe -o dist/hatchlens.msi
+```
+
+Started by the service control manager it runs as the service `HatchLens` with the host part in the
+same process; started any other way (also in the container) it behaves as before.
+
 `hatchlens-host version` prints the version; without arguments it serves in the foreground until
 Ctrl+C (as administrator), under the service control manager as the service.
 
@@ -94,7 +104,8 @@ tests/integration/run-images.sh hatchlens:test "$PWD/cover-images" containerd
 `tests/integration/run-windows.ps1 IMAGE COVERDIR LTSC MSI HOSTEXE` runs the Windows image on a Windows
 Server host: first without the host service (image checks, container usage, admin action
 `install_host_service`), then with the MSI installed (volume and directory sizes and their growth,
-traffic per Docker network on two `nat` networks), and uninstalls the MSI. The service's unit tests open
+traffic per Docker network on two `nat` networks), uninstalls the MSI, then installs HatchLens itself
+as a service from its MSI and checks the same against port 8080 of the host. The service's unit tests open
 the volume and read its USN journal; they need administrator rights, which the CI runners have.
 
 ## Coverage

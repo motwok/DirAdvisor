@@ -227,6 +227,28 @@ volumes:
 - Updating the MSI keeps the service; after a reinstall the container registers its directories again.
 - To remove it: `msiexec /x hatchlens-host-X.Y.Z.msi /qn`.
 
+### Windows without a container: HatchLens as a service
+
+`hatchlens-X.Y.Z.msi` of the release installs HatchLens itself as the Windows service `HatchLens`
+(LocalSystem, automatic start). It does everything in one process: image checks, container usage,
+Docker volumes and directories, traffic per Docker network; the HatchLens Host service is not needed
+next to it.
+
+```powershell
+msiexec /i hatchlens-X.Y.Z.msi /qn
+```
+
+- Config: `%ProgramData%\HatchLens\config.yml` if it exists (or `HATCHLENS_CONFIG_FILE` /
+  `HATCHLENS_CONFIG` in the service's environment), else the defaults. A change needs a restart of the
+  service (`Restart-Service HatchLens`).
+- State: `%ProgramData%\HatchLens` unless `storage_path` is set. Log:
+  `%ProgramData%\HatchLens\hatchlens.log`, started fresh after 10 MB.
+- `/metrics` on port 8080 of the host (`listen_address`); open it in the Windows firewall for the
+  Prometheus server, e.g. `New-NetFirewallRule -DisplayName HatchLens -Direction Inbound -Protocol TCP
+  -LocalPort 8080 -Action Allow`.
+- Updating: install the newer MSI; removing: `msiexec /x hatchlens-X.Y.Z.msi /qn` (config and state in
+  `%ProgramData%\HatchLens` stay).
+
 ## Update and rollback
 
 - `:latest` gets every release; redeploy the stack to update. See [RELEASING.md](../RELEASING.md),

@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"net"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/motwok/HatchLens/internal/winhost"
@@ -123,11 +124,15 @@ func TestServiceUnreachable(t *testing.T) {
 	if r, _ := s.QuotaStatus(m); r != InstallHostService {
 		t.Fatalf("status %q", r)
 	}
+	missing := NewService(func(context.Context, string, string) (net.Conn, error) { return nil, fs.ErrNotExist })
+	if m, err := missing.MountOf("/C:/data"); err != nil || m.Point != "/C:" {
+		t.Fatalf("a missing pipe is an unreachable service, not a missing path: %+v %v", m, err)
+	}
 	if m, _ := s.MountOf("relative"); m.Point != "relative" {
 		t.Fatal("drive of a path without drive")
 	}
-	if _, err := s.Endpoints(context.Background()); err == nil {
-		t.Fatal("endpoints")
+	if _, err := s.Endpoints(context.Background()); err == nil || !strings.HasPrefix(err.Error(), "host service unreachable: ") || !strings.Contains(err.Error(), "no pipe") {
+		t.Fatalf("endpoints: %v", err)
 	}
 	if !AdminAction(InstallHostService) || !AdminAction(EnableUSNJournal) {
 		t.Fatal("both are admin actions")
@@ -143,5 +148,43 @@ func TestServiceBadUsageKey(t *testing.T) {
 	})
 	if _, err := s.Usage(context.Background(), Mount{Point: "/C:"}, 1); err == nil {
 		t.Fatal("a key that is no ID is an error")
+	}
+}
+
+type downBackend struct{ *fakeBackend }
+
+func (downBackend) Mount(string) (winhost.Mount, error) { return winhost.Mount{}, errors.New("broken") }
+
+func TestLocal(t *testing.T) {
+	b := &fakeBackend{assigned: map[string]uint32{}}
+	s := NewLocal(b)
+	if e, d := s.Stat("/C:/data"); !e || !d {
+		t.Fatal("stat")
+	}
+	if d, err := s.ListDirs("/C:/data"); err != nil || len(d) != 2 {
+		t.Fatalf("dirs %v %v", d, err)
+	}
+	m, err := s.MountOf("/C:/data")
+	if err != nil || m.Point != "/C:" || m.Options != EnableUSNJournal {
+		t.Fatalf("mount %+v %v", m, err)
+	}
+	if _, err := s.MountOf("/C:/none"); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("mount missing: %v", err)
+	}
+	if err := s.Walk(context.Background(), "/C:/data", 9, false, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	if id, _ := s.ProjectID("/C:/data"); id != 9 {
+		t.Fatalf("id %d", id)
+	}
+	if u, err := s.Usage(context.Background(), m, 9); err != nil || u[9].Inodes != 3 {
+		t.Fatalf("usage %v %v", u, err)
+	}
+	if eps, err := s.Endpoints(context.Background()); err != nil || eps["AB-1"] != "NET-X" {
+		t.Fatalf("endpoints %v %v", eps, err)
+	}
+	down := NewLocal(downBackend{b})
+	if m, err := down.MountOf("/C:/data"); err != nil || m.FSType != "" {
+		t.Fatalf("broken backend: %+v %v", m, err)
 	}
 }

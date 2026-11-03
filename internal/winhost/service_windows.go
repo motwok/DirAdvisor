@@ -183,21 +183,27 @@ func (h *host) loop(ctx context.Context, poll, rewalk time.Duration) {
 	}
 }
 
-func serve(ctx context.Context, log *slog.Logger) error {
+// Start runs the host part in this process until ctx ends: in the service,
+// and in HatchLens itself when it runs as a Windows service on the host.
+func Start(ctx context.Context, log *slog.Logger) Backend {
 	if err := enableBackup(); err != nil {
 		log.Warn("SeBackupPrivilege not enabled", "err", err)
 	}
+	h := newHost(log)
+	go h.loop(ctx, pollEvery, rewalkEvery)
+	return h
+}
+
+func serve(ctx context.Context, log *slog.Logger) error {
 	l, err := listen(Pipe)
 	if err != nil {
 		return err
 	}
-	h := newHost(log)
-	srv := &http.Server{Handler: Handler(h, Version), ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Handler: Handler(Start(ctx, log), Version), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
 		srv.Close()
 	}()
-	go h.loop(ctx, pollEvery, rewalkEvery)
 	log.Info("listening", "pipe", Pipe, "version", Version)
 	if err := srv.Serve(l); !errors.Is(err, http.ErrServerClosed) {
 		return err
@@ -233,19 +239,26 @@ func (s service) Execute(_ []string, req <-chan svc.ChangeRequest, st chan<- svc
 	}
 }
 
-// serviceLog writes to %ProgramData%\HatchLens\hatchlens-host.log, started
-// fresh once it passed 10 MB.
-func serviceLog() (*slog.Logger, io.Closer, error) {
+// DataDir is %ProgramData%\HatchLens, for logs, and the config and state of
+// HatchLens as a Windows service.
+func DataDir() string { return logDir() }
+
+// OpenLog opens a log file in DataDir, started fresh once it passed 10 MB.
+func OpenLog(name string) (*os.File, error) {
 	dir := logDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	name := filepath.Join(dir, "hatchlens-host.log")
+	name = filepath.Join(dir, name)
 	flag := os.O_CREATE | os.O_WRONLY | os.O_APPEND
 	if fi, err := os.Stat(name); err == nil && fi.Size() > 10<<20 {
 		flag |= os.O_TRUNC
 	}
-	f, err := os.OpenFile(name, flag, 0o644)
+	return os.OpenFile(name, flag, 0o644)
+}
+
+func serviceLog() (*slog.Logger, io.Closer, error) {
+	f, err := OpenLog("hatchlens-host.log")
 	if err != nil {
 		return nil, nil, err
 	}
