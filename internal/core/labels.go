@@ -10,7 +10,7 @@ import (
 	"github.com/motwok/HatchLens/internal/state"
 )
 
-const selfServicePrefix = "de.mo2000.hatchlens.label."
+const selfServicePrefix = config.LabelSelf
 
 func isOwnLabel(n string) bool {
 	for _, o := range config.OwnLabels {
@@ -40,7 +40,7 @@ func volumeLabels(cfg *config.Config, vol docker.Volume, path string, o ownershi
 	}
 	// Lowest priority first, later sources overwrite.
 	if o.OwnerC != nil {
-		for _, r := range cfg.Docker.ContainerLabels {
+		for _, r := range cfg.ContainerLabels {
 			fromContainer(r.Target("container_label_"), o.OwnerC.Labels[r.From])
 		}
 	} else {
@@ -49,11 +49,11 @@ func volumeLabels(cfg *config.Config, vol docker.Volume, path string, o ownershi
 		}
 	}
 	for k, v := range ctr {
-		if strings.HasPrefix(k, "container_label_") || isAllowlistTarget(cfg.Docker.ContainerLabels, k) {
+		if strings.HasPrefix(k, "container_label_") || isAllowlistTarget(cfg.ContainerLabels, k) {
 			set(k, v)
 		}
 	}
-	for _, r := range cfg.Docker.VolumeLabels {
+	for _, r := range cfg.VolumeLabels {
 		set(r.Target("volume_label_"), vol.Labels[r.From])
 	}
 	for k, v := range vol.Labels {
@@ -69,16 +69,12 @@ func volumeLabels(cfg *config.Config, vol docker.Volume, path string, o ownershi
 		}
 	}
 	for k, v := range ctr {
-		if !strings.HasPrefix(k, "container_label_") && !isAllowlistTarget(cfg.Docker.ContainerLabels, k) {
+		if !strings.HasPrefix(k, "container_label_") && !isAllowlistTarget(cfg.ContainerLabels, k) {
 			set(k, v)
 		}
 	}
-	for _, rule := range cfg.Docker.Labels {
-		if ruleMatches(rule.Match, vol.Name, o, path) {
-			for k, v := range rule.Labels {
-				set(k, v)
-			}
-		}
+	for k, v := range cfg.RuleLabels(config.Subject{Stack: &o.Stack, Container: &o.Owner, Volume: &vol.Name, Path: &path}) {
+		set(k, v)
 	}
 	return out, ctr
 }
@@ -91,7 +87,7 @@ func containerLabelsOf(cfg *config.Config, e *state.Entry) map[string]string {
 	}
 	out := map[string]string{}
 	for k, v := range e.Labels {
-		if strings.HasPrefix(k, "container_label_") || isAllowlistTarget(cfg.Docker.ContainerLabels, k) {
+		if strings.HasPrefix(k, "container_label_") || isAllowlistTarget(cfg.ContainerLabels, k) {
 			out[k] = v
 		}
 	}
@@ -107,20 +103,19 @@ func isAllowlistTarget(refs []config.LabelRef, name string) bool {
 	return false
 }
 
-func ruleMatches(m config.Match, volume string, o ownership, path string) bool {
-	if m.Stack != "" && !config.MatchName(m.Stack, o.Stack) {
-		return false
+// withRules adds the labels of matching rules to a configured directory; the
+// directory's own labels win.
+func withRules(cfg *config.Config, stack, path string, own map[string]string) map[string]string {
+	out := map[string]string{}
+	for k, v := range cfg.RuleLabels(config.Subject{Stack: &stack, Path: &path}) {
+		if v != "" {
+			out[k] = v
+		}
 	}
-	if m.Volume != "" && !config.MatchName(m.Volume, volume) {
-		return false
+	for k, v := range own {
+		out[k] = v
 	}
-	if m.Container != "" && !config.MatchName(m.Container, o.Owner) {
-		return false
-	}
-	if m.Path != "" && !config.MatchPath(m.Path, path) {
-		return false
-	}
-	return true
+	return out
 }
 
 // directoryLabels splits configured labels into stack, owner and the rest.

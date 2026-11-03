@@ -13,7 +13,7 @@ Start with `docker logs hatchlens` and the series `hatchlens_admin_action_needed
 | exits with code 2 | unknown flag or value | check the command line |
 | `/-/ready` stays 503, `reconcile_errors_total` grows | Docker socket not reachable | mount `/var/run/docker.sock`; configured directories are measured anyway once Docker answered at least once (see `docker_root_unknown`) |
 | `directory_unmeasurable{reason="quota_access_failed"}`, log `quotactl_fd ... operation not permitted` | capabilities or seccomp | add `SYS_ADMIN`; if that is not enough, try `privileged: true` |
-| `listen failed` | port in use (cAdvisor also uses 8080) | map another host port or set `global.listen_address` |
+| `listen failed` | port in use (cAdvisor also uses 8080) | map another host port or set `listen_address` |
 | Windows: log `reconcile failed` with "Access is denied" | the container does not run as `ContainerAdministrator` (a `user:` in the stack overrides the image) | remove the `user:` |
 | Windows: exits with code 1, `directories: not supported on Windows` | directories are measured on Linux only | remove `directories` |
 
@@ -22,9 +22,10 @@ Start with `docker logs hatchlens` and the series `hatchlens_admin_action_needed
 **Too low right after start or after adding a directory.** HatchLens first walks the directory to set
 the project ID; `hatchlens_directory_assigning` is 1 until it is done. The walk runs with idle I/O
 priority, so on a busy disk it can take a while. To make it gentler still, set
-`global.walk_files_per_second`.
+`walk_files_per_second`.
 
-**A volume is missing.** Check that it is a `local` volume and not excluded by `docker.exclude.volumes`.
+**A volume is missing.** Check that it is a `local` volume and not excluded by `exclude.volumes`, and that its owner container is
+not excluded (`exclude.containers`, `exclude.images`, `de.mo2000.hatchlens.enable=false`).
 Bind mounts are never discovered; add them under `directories`.
 
 **Bytes differ from `du`.** HatchLens counts allocated blocks like `du` (not `du -b`). On ZFS the size
@@ -33,17 +34,16 @@ files that existed before the walk keep their old project ID; only their inode c
 
 **The log says `walk failed ... invalid argument` on XFS.** An XFS v4 filesystem without the
 `projid32bit` feature accepts project IDs up to 65535 only; the default range starts at 100000. Set
-`global.project_ids` below 65536 for such hosts, or migrate the filesystem to XFS v5.
+`project_ids` below 65536 for such hosts, or migrate the filesystem to XFS v5.
 
 **An outer directory counts less than expected.** Directories inside it that are measured on their own
 (another entry, a volume) are counted there, not in the outer one; see `hatchlens_directory_overlap`.
 
 ## Image checks
 
-**A container is missing.** It is excluded (`images.exclude.containers`, `images.exclude.images` or the
-label `de.mo2000.hatchlens.enable=false`), or it is an old Swarm task (not running) or being removed;
-those are not reported. With `images.enabled: false` or an empty `docker.socket` there are no image
-metrics at all.
+**A container is missing.** It is excluded (`exclude.containers`, `exclude.images` or the label
+`de.mo2000.hatchlens.enable=false`), or it is an old Swarm task (not running) or being removed; those
+are not reported. With `image` in `disable` there are no image metrics at all.
 
 **A container stays `pending` or shows `error`.**
 
@@ -91,7 +91,7 @@ lsattr -pd /path            # shows the current project ID
 chattr -R -p 0 /path
 ```
 
-If the ID belongs to your own range from an earlier setup, widen `global.project_ids` instead.
+If the ID belongs to your own range from an earlier setup, widen `project_ids` instead.
 
 ### `duplicate_path`
 
@@ -106,14 +106,14 @@ If the directory is gone for good, remove it from the config.
 
 ### `project_ids_exhausted`
 
-All IDs in `global.project_ids` are in use. Widen the range; IDs already assigned stay valid.
+All IDs in `project_ids` are in use. Widen the range; IDs already assigned stay valid.
 
 ### `docker_root_unknown`
 
 Docker is enabled but has never answered since the first start, so HatchLens does not know Docker's
 data directory, which it must never walk into. Configured directories wait until Docker answers once;
-after that the directory is remembered across restarts. Without Docker on this host set
-`docker.enabled: false`.
+after that the directory is remembered across restarts. Without Docker on this host add `volume` and
+`image` to `disable` and set `docker_socket` to empty.
 
 ### `quota_access_failed`
 

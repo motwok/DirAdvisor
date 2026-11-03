@@ -38,11 +38,9 @@ function WaitFor($seconds, $what, [scriptblock] $check) {
 
 Step 'start'
 @'
-global:
-  reconcile_interval: 5s
-images:
-  exclude:
-    containers: ["hatchlens"]
+reconcile_interval: 5s
+exclude:
+  containers: ["hatchlens"]
 '@ | Set-Content -Encoding ascii (Join-Path $data 'config.yml')
 Invoke-Docker create --name target "mcr.microsoft.com/windows/nanoserver:$Ltsc" | Out-Null
 Invoke-Docker run -d --name hatchlens -e GOCOVERDIR=C:\cover -e HATCHLENS_CONFIG_FILE=C:\data\config.yml `

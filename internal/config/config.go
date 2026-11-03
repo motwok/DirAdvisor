@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -25,43 +26,43 @@ var OwnLabels = []string{"path", "source", "volume", "stack", "owner", "state", 
 // ImageOwnLabels are set by HatchLens on the image metrics.
 var ImageOwnLabels = []string{"container", "image", "reference", "stack", "state", "mode"}
 
+// Functions that can be switched off with disable.
+const (
+	FnDirectory = "directory"
+	FnVolume    = "volume"
+	FnImage     = "image"
+)
+
+var functions = []string{FnDirectory, FnVolume, FnImage}
+
+// Docker labels HatchLens reads on containers and volumes.
+const (
+	LabelEnable = "de.mo2000.hatchlens.enable"
+	LabelSelf   = "de.mo2000.hatchlens.label."
+)
+
 type Config struct {
-	Global      Global      `yaml:"global"`
-	Docker      Docker      `yaml:"docker"`
-	Directories []Directory `yaml:"directories"`
-	Images      Images      `yaml:"images"`
+	Disable         []string `yaml:"disable"`
+	Global          `yaml:",inline"`
+	Exclude         Exclude     `yaml:"exclude"`
+	ContainerLabels []LabelRef  `yaml:"container_labels"`
+	VolumeLabels    []LabelRef  `yaml:"volume_labels"`
+	Labels          []LabelRule `yaml:"labels"`
+	DockerSocket    string      `yaml:"docker_socket"`
+	Directories     []Directory `yaml:"directories"`
+	Images          Images      `yaml:"images"`
 }
 
 type Images struct {
-	Enabled         bool             `yaml:"enabled"`
-	CheckInterval   Duration         `yaml:"check_interval"`
-	ForgetAfter     Duration         `yaml:"forget_after"`
-	Exclude         ImageExclude     `yaml:"exclude"`
-	Registries      []Registry       `yaml:"registries"`
-	ContainerLabels []LabelRef       `yaml:"container_labels"`
-	Labels          []ImageLabelRule `yaml:"labels"`
-}
-
-type ImageExclude struct {
-	Containers []string `yaml:"containers"`
-	Images     []string `yaml:"images"`
+	CheckInterval Duration   `yaml:"check_interval"`
+	ForgetAfter   Duration   `yaml:"forget_after"`
+	Registries    []Registry `yaml:"registries"`
 }
 
 type Registry struct {
 	Host     string `yaml:"host"`
 	Username string `yaml:"username"`
 	Password string `yaml:"password"`
-}
-
-type ImageLabelRule struct {
-	Match  ImageMatch        `yaml:"match"`
-	Labels map[string]string `yaml:"labels"`
-}
-
-type ImageMatch struct {
-	Stack     string `yaml:"stack"`
-	Container string `yaml:"container"`
-	Image     string `yaml:"image"`
 }
 
 // Registry returns the credentials for a normalized registry host, if any.
@@ -113,17 +114,17 @@ type IDRange struct {
 	To   int64 `yaml:"to"`
 }
 
-type Docker struct {
-	Socket          string      `yaml:"socket"`
-	Enabled         bool        `yaml:"enabled"`
-	Exclude         Exclude     `yaml:"exclude"`
-	ContainerLabels []LabelRef  `yaml:"container_labels"`
-	VolumeLabels    []LabelRef  `yaml:"volume_labels"`
-	Labels          []LabelRule `yaml:"labels"`
+type Exclude struct {
+	Volumes    []string `yaml:"volumes"`
+	Containers []string `yaml:"containers"`
+	Images     []string `yaml:"images"`
 }
 
-type Exclude struct {
-	Volumes []string `yaml:"volumes"`
+// ExcludedContainer reports whether a container is excluded from every
+// function: by name, by its image reference (as written or normalized) or by
+// the enable label.
+func (c *Config) ExcludedContainer(name string, labels map[string]string, images ...string) bool {
+	return labels[LabelEnable] == "false" || MatchAny(c.Exclude.Containers, name) || MatchAny(c.Exclude.Images, images...)
 }
 
 // LabelRef is an allowlisted Docker label, written as "name" or {from, to}.
@@ -166,7 +167,38 @@ type Match struct {
 	Stack     string `yaml:"stack"`
 	Volume    string `yaml:"volume"`
 	Container string `yaml:"container"`
+	Image     string `yaml:"image"`
 	Path      string `yaml:"path"`
+}
+
+// Subject is what a rule is matched against. A nil field or no Images means
+// the series has no such key, so a rule naming it does not match.
+type Subject struct {
+	Stack, Container, Volume, Path *string
+	Images                         []string
+}
+
+// Matches reports whether every key given in the rule exists for s and matches.
+func (m Match) Matches(s Subject) bool {
+	key := func(p string, v *string, match func(p, v string) bool) bool {
+		return p == "" || v != nil && match(p, *v)
+	}
+	return key(m.Stack, s.Stack, MatchName) && key(m.Container, s.Container, MatchName) &&
+		key(m.Volume, s.Volume, MatchName) && key(m.Path, s.Path, MatchPath) &&
+		(m.Image == "" || MatchAny([]string{m.Image}, s.Images...))
+}
+
+// RuleLabels returns the labels of all rules matching s, later rules winning.
+func (c *Config) RuleLabels(s Subject) map[string]string {
+	out := map[string]string{}
+	for _, r := range c.Labels {
+		if r.Match.Matches(s) {
+			for k, v := range r.Labels {
+				out[k] = v
+			}
+		}
+	}
+	return out
 }
 
 type Directory struct {
@@ -200,8 +232,8 @@ func Default() *Config {
 			AdminActionLogInterval: Duration(time.Hour),
 			ProjectIDs:             IDRange{From: 100000, To: 199999},
 		},
-		Docker: Docker{Socket: docker.DefaultSocket, Enabled: true},
-		Images: Images{Enabled: true, CheckInterval: Duration(24 * time.Hour), ForgetAfter: Duration(168 * time.Hour)},
+		DockerSocket: docker.DefaultSocket,
+		Images:       Images{CheckInterval: Duration(24 * time.Hour), ForgetAfter: Duration(168 * time.Hour)},
 	}
 }
 
@@ -261,31 +293,36 @@ func (c *Config) expand(lookup LookupFunc) error {
 		}
 	}
 	g := &c.Global
-	ex("global.listen_address", &g.ListenAddress)
-	ex("global.log_level", &g.LogLevel)
-	ex("global.log_format", &g.LogFormat)
-	ex("global.storage_path", &g.StoragePath)
-	ex("global.rootfs", &g.RootFS)
-	ex("docker.socket", &c.Docker.Socket)
-	for i := range c.Docker.Exclude.Volumes {
-		ex(fmt.Sprintf("docker.exclude.volumes[%d]", i), &c.Docker.Exclude.Volumes[i])
+	ex("listen_address", &g.ListenAddress)
+	ex("log_level", &g.LogLevel)
+	ex("log_format", &g.LogFormat)
+	ex("storage_path", &g.StoragePath)
+	ex("rootfs", &g.RootFS)
+	ex("docker_socket", &c.DockerSocket)
+	for _, l := range []struct {
+		name string
+		list []string
+	}{{"exclude.volumes", c.Exclude.Volumes}, {"exclude.containers", c.Exclude.Containers}, {"exclude.images", c.Exclude.Images}} {
+		for i := range l.list {
+			ex(fmt.Sprintf("%s[%d]", l.name, i), &l.list[i])
+		}
 	}
 	for _, l := range []struct {
 		name string
 		refs []LabelRef
-	}{{"docker.container_labels", c.Docker.ContainerLabels}, {"docker.volume_labels", c.Docker.VolumeLabels},
-		{"images.container_labels", c.Images.ContainerLabels}} {
+	}{{"container_labels", c.ContainerLabels}, {"volume_labels", c.VolumeLabels}} {
 		for i := range l.refs {
 			where := fmt.Sprintf("%s[%d]", l.name, i)
 			ex(where+".from", &l.refs[i].From)
 			ex(where+".to", &l.refs[i].To)
 		}
 	}
-	for i := range c.Docker.Labels {
-		r, where := &c.Docker.Labels[i], fmt.Sprintf("docker.labels[%d]", i)
+	for i := range c.Labels {
+		r, where := &c.Labels[i], fmt.Sprintf("labels[%d]", i)
 		ex(where+".match.stack", &r.Match.Stack)
 		ex(where+".match.volume", &r.Match.Volume)
 		ex(where+".match.container", &r.Match.Container)
+		ex(where+".match.image", &r.Match.Image)
 		ex(where+".match.path", &r.Match.Path)
 		exMap(where, r.Labels)
 	}
@@ -295,24 +332,11 @@ func (c *Config) expand(lookup LookupFunc) error {
 		exMap(where, c.Directories[i].Labels)
 	}
 	im := &c.Images
-	for i := range im.Exclude.Containers {
-		ex(fmt.Sprintf("images.exclude.containers[%d]", i), &im.Exclude.Containers[i])
-	}
-	for i := range im.Exclude.Images {
-		ex(fmt.Sprintf("images.exclude.images[%d]", i), &im.Exclude.Images[i])
-	}
 	for i := range im.Registries {
 		r, where := &im.Registries[i], fmt.Sprintf("images.registries[%d]", i)
 		ex(where+".host", &r.Host)
 		ex(where+".username", &r.Username)
 		ex(where+".password", &r.Password)
-	}
-	for i := range im.Labels {
-		r, where := &im.Labels[i], fmt.Sprintf("images.labels[%d]", i)
-		ex(where+".match.stack", &r.Match.Stack)
-		ex(where+".match.container", &r.Match.Container)
-		ex(where+".match.image", &r.Match.Image)
-		exMap(where, r.Labels)
 	}
 	return err
 }
@@ -333,6 +357,20 @@ func isOwn(n string) bool {
 	return false
 }
 
+// isAnyOwn: own label of the directory or the image metrics; shared rules and
+// the container allowlist feed both.
+func isAnyOwn(n string) bool { return isOwn(n) || IsImageOwn(n) }
+
+func checkName(where, n string, own func(string) bool) error {
+	if !ValidLabelName(n) {
+		return fmt.Errorf("%s: invalid label name %q", where, n)
+	}
+	if own(n) {
+		return fmt.Errorf("%s: label %q is set by HatchLens", where, n)
+	}
+	return nil
+}
+
 func checkLabelName(where, n string, allowStackOwner bool) error {
 	if !ValidLabelName(n) {
 		return fmt.Errorf("%s: invalid label name %q", where, n)
@@ -343,18 +381,43 @@ func checkLabelName(where, n string, allowStackOwner bool) error {
 	return nil
 }
 
+// Enabled reports whether a function runs: not in disable, and on Windows
+// only the image part exists.
+func (c *Config) Enabled(f string) bool {
+	if windows && f != FnImage {
+		return false
+	}
+	return !slices.Contains(c.Disable, f)
+}
+
 func (c *Config) validate(stat StatFunc) error {
+	for _, f := range c.Disable {
+		if !slices.Contains(functions, f) {
+			return fmt.Errorf("disable: unknown function %q, want directory, volume or image", f)
+		}
+	}
+	if c.DockerSocket == "" {
+		var need []string
+		for _, f := range []string{FnVolume, FnImage} {
+			if c.Enabled(f) {
+				need = append(need, f)
+			}
+		}
+		if len(need) > 0 {
+			return fmt.Errorf("docker_socket is empty, but %s need it; add them to disable", strings.Join(need, ", "))
+		}
+	}
 	g := c.Global
 	switch g.LogLevel {
 	case "debug", "info", "warn", "error":
 	default:
-		return fmt.Errorf("global.log_level %q: want debug, info, warn or error", g.LogLevel)
+		return fmt.Errorf("log_level %q: want debug, info, warn or error", g.LogLevel)
 	}
 	if g.LogFormat != "logfmt" && g.LogFormat != "json" {
-		return fmt.Errorf("global.log_format %q: want logfmt or json", g.LogFormat)
+		return fmt.Errorf("log_format %q: want logfmt or json", g.LogFormat)
 	}
 	if g.ReconcileInterval <= 0 || g.AdminActionLogInterval <= 0 {
-		return errors.New("global: durations must be greater than 0")
+		return errors.New("durations must be greater than 0")
 	}
 	if windows && len(c.Directories) > 0 {
 		return errors.New("directories: not supported on Windows")
@@ -363,25 +426,27 @@ func (c *Config) validate(stat StatFunc) error {
 		return err
 	}
 	if g.WalkFilesPerSecond < 0 || g.WalkFilesPerSecond > 1_000_000_000 {
-		return errors.New("global.walk_files_per_second must be between 0 and 1000000000")
+		return errors.New("walk_files_per_second must be between 0 and 1000000000")
 	}
 	if g.ProjectIDs.From < 1 || g.ProjectIDs.To <= g.ProjectIDs.From || g.ProjectIDs.To > 4294967294 {
-		return errors.New("global.project_ids: need 1 <= from < to <= 4294967294")
+		return errors.New("project_ids: need 1 <= from < to <= 4294967294")
 	}
 	for _, l := range []struct {
 		name, prefix string
 		refs         []LabelRef
+		own          func(string) bool
 	}{
-		{"docker.container_labels", "container_label_", c.Docker.ContainerLabels},
-		{"docker.volume_labels", "volume_label_", c.Docker.VolumeLabels},
+		{"container_labels", "container_label_", c.ContainerLabels, isAnyOwn},
+		{"volume_labels", "volume_label_", c.VolumeLabels, isOwn},
 	} {
 		seen := map[string]bool{}
-		for _, r := range l.refs {
+		for i, r := range l.refs {
+			where := fmt.Sprintf("%s[%d]", l.name, i)
 			if r.From == "" {
-				return fmt.Errorf("%s: empty label name", l.name)
+				return fmt.Errorf("%s: empty label name", where)
 			}
 			n := r.Target(l.prefix)
-			if err := checkLabelName(l.name, n, false); err != nil {
+			if err := checkName(where, n, l.own); err != nil {
 				return err
 			}
 			if seen[n] {
@@ -390,9 +455,9 @@ func (c *Config) validate(stat StatFunc) error {
 			seen[n] = true
 		}
 	}
-	for i, r := range c.Docker.Labels {
+	for i, r := range c.Labels {
 		for k := range r.Labels {
-			if err := checkLabelName(fmt.Sprintf("docker.labels[%d]", i), k, false); err != nil {
+			if err := checkName(fmt.Sprintf("labels[%d]", i), k, isAnyOwn); err != nil {
 				return err
 			}
 		}
@@ -438,36 +503,6 @@ func (im Images) validate() error {
 			return fmt.Errorf("images.registries[%d]: host %s twice", i, h)
 		}
 		hosts[h] = true
-	}
-	check := func(where, n string) error {
-		if !ValidLabelName(n) {
-			return fmt.Errorf("%s: invalid label name %q", where, n)
-		}
-		if IsImageOwn(n) {
-			return fmt.Errorf("%s: label %q is set by HatchLens", where, n)
-		}
-		return nil
-	}
-	seen := map[string]bool{}
-	for _, l := range im.ContainerLabels {
-		if l.From == "" {
-			return errors.New("images.container_labels: empty label name")
-		}
-		n := l.Target("container_label_")
-		if err := check("images.container_labels", n); err != nil {
-			return err
-		}
-		if seen[n] {
-			return fmt.Errorf("images.container_labels: two labels map to %q", n)
-		}
-		seen[n] = true
-	}
-	for i, r := range im.Labels {
-		for k := range r.Labels {
-			if err := check(fmt.Sprintf("images.labels[%d]", i), k); err != nil {
-				return err
-			}
-		}
 	}
 	return nil
 }

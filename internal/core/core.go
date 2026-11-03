@@ -23,6 +23,7 @@ type Docker interface {
 	Info(ctx context.Context) (docker.Info, error)
 	Volumes(ctx context.Context) ([]docker.Volume, error)
 	Containers(ctx context.Context) ([]docker.Container, error)
+	Container(ctx context.Context, id string) (docker.ContainerJSON, error)
 }
 
 // ErrDockerTooOld stops HatchLens (spec DIS-14).
@@ -69,6 +70,8 @@ type Core struct {
 	recErrors  float64
 	recSeconds float64
 	logged     map[string]time.Time
+	// cfgImages caches Config.Image per container ID for exclude.images.
+	cfgImages map[string]string
 
 	pub   published
 	usage usageCache
@@ -131,8 +134,8 @@ func New(cfg *config.Config, o Options) *Core {
 	return &Core{
 		cfg: cfg, st: st, saved: saved, fs: o.FS, dk: o.Docker, storage: o.StorageDir, self: o.SelfID,
 		log: o.Log, now: o.Now, walkable: map[string]bool{}, failed: map[string]time.Time{},
-		wake: make(chan struct{}, 1), logged: map[string]time.Time{},
-		dockerRoot: st.DockerRoot, rootKnown: st.DockerRoot != "" || !cfg.Docker.Enabled || o.Docker == nil,
+		wake: make(chan struct{}, 1), logged: map[string]time.Time{}, cfgImages: map[string]string{},
+		dockerRoot: st.DockerRoot, rootKnown: st.DockerRoot != "" || !cfg.Enabled(config.FnVolume) || o.Docker == nil,
 	}
 }
 

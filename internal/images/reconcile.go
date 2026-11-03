@@ -16,9 +16,8 @@ import (
 )
 
 const (
-	labelPrefix = "de.mo2000.hatchlens."
-	labelEnable = labelPrefix + "enable"
-	labelSelf   = labelPrefix + "label."
+	labelEnable = config.LabelEnable
+	labelSelf   = config.LabelSelf
 	swarmTask   = "com.docker.swarm.task.id"
 )
 
@@ -180,8 +179,7 @@ func (c *Core) refImage(ctx context.Context, r string) (string, error) {
 }
 
 func excluded(cfg *config.Config, ct docker.Container, images ...string) bool {
-	return ct.Labels[labelEnable] == "false" || config.MatchAny(cfg.Images.Exclude.Containers, ct.Name()) ||
-		config.MatchAny(cfg.Images.Exclude.Images, images...)
+	return cfg.ExcludedContainer(ct.Name(), ct.Labels, images...)
 }
 
 // runningDigests are the RepoDigests of the repository plus the image ID (REF-5).
@@ -352,7 +350,7 @@ func (c *Core) labels(cfg *config.Config, ct docker.Container, stk, image, norma
 		}
 		out[name] = v
 	}
-	for _, l := range cfg.Images.ContainerLabels {
+	for _, l := range cfg.ContainerLabels {
 		if v, ok := ct.Labels[l.From]; ok {
 			set(l.Target("container_label_"), v)
 		}
@@ -366,15 +364,9 @@ func (c *Core) labels(cfg *config.Config, ct docker.Container, stk, image, norma
 	if !local {
 		images = append(images, normalized)
 	}
-	for _, r := range cfg.Images.Labels {
-		if r.Match.Stack != "" && !config.MatchName(r.Match.Stack, stk) ||
-			r.Match.Container != "" && !config.MatchName(r.Match.Container, ct.Name()) ||
-			r.Match.Image != "" && !config.MatchAny([]string{r.Match.Image}, images...) {
-			continue
-		}
-		for k, v := range r.Labels {
-			out[k] = v
-		}
+	name := ct.Name()
+	for k, v := range cfg.RuleLabels(config.Subject{Stack: &stk, Container: &name, Images: images}) {
+		out[k] = v
 	}
 	return out
 }

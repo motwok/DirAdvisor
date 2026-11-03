@@ -160,6 +160,10 @@ type fakeDocker struct {
 	infoErr    error
 	volErr     error
 	ctrErr     error
+	// configs is Config.Image per container ID; missing means 404.
+	configs    map[string]string
+	inspectErr error
+	inspects   int
 }
 
 var errDown = errors.New("down")
@@ -202,6 +206,19 @@ func (d *fakeDocker) Containers(context.Context) ([]docker.Container, error) {
 		return nil, d.ctrErr
 	}
 	return d.containers, nil
+}
+func (d *fakeDocker) Container(_ context.Context, id string) (docker.ContainerJSON, error) {
+	d.inspects++
+	if d.inspectErr != nil {
+		return docker.ContainerJSON{}, d.inspectErr
+	}
+	img, ok := d.configs[id]
+	if !ok {
+		return docker.ContainerJSON{}, &docker.APIError{Status: 404}
+	}
+	var j docker.ContainerJSON
+	j.Config.Image = img
+	return j, nil
 }
 
 type env struct {

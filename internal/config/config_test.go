@@ -23,10 +23,10 @@ func TestDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	if c.Global.ReconcileInterval.D() != 60*time.Second || c.Global.AdminActionLogInterval.D() != time.Hour ||
-		!c.Images.Enabled || c.Images.CheckInterval.D() != 24*time.Hour || c.Images.ForgetAfter.D() != 168*time.Hour ||
-		c.Global.ProjectIDs != (IDRange{100000, 199999}) || !c.Docker.Enabled ||
+		!c.Enabled(FnImage) || c.Images.CheckInterval.D() != 24*time.Hour || c.Images.ForgetAfter.D() != 168*time.Hour ||
+		c.Global.ProjectIDs != (IDRange{100000, 199999}) || c.Enabled(FnVolume) == windows || c.Enabled(FnDirectory) == windows ||
 		c.Global.ListenAddress != ":8080" || c.Global.LogLevel != "info" || c.Global.LogFormat != "logfmt" ||
-		c.Global.StoragePath != defaultStorage || c.Global.RootFS != "/host" || c.Docker.Socket != docker.DefaultSocket {
+		c.Global.StoragePath != defaultStorage || c.Global.RootFS != "/host" || c.DockerSocket != docker.DefaultSocket {
 		t.Fatalf("unexpected defaults: %+v", c)
 	}
 }
@@ -34,64 +34,57 @@ func TestDefaults(t *testing.T) {
 func TestFullConfig(t *testing.T) {
 	skipOnWindows(t)
 	data := `
-global:
-  reconcile_interval: 30s
-  walk_files_per_second: 100
-  project_ids: { from: 5000, to: 6000 }
-docker:
-  enabled: false
-  exclude:
-    volumes: [ "buildx_*" ]
-  container_labels:
-    - com.example.team
-    - { from: com.example.backup, to: backup }
-  volume_labels: [ com.example.retention ]
-  labels:
-    - match: { stack: mailcow }
-      labels: { team: mail }
+disable: [ volume, image ]
+reconcile_interval: 30s
+walk_files_per_second: 100
+project_ids: { from: 5000, to: 6000 }
+exclude:
+  volumes: [ "buildx_*" ]
+  containers: [ "buildx_*" ]
+  images: [ "${REG}/*" ]
+container_labels:
+  - com.example.team
+  - { from: com.example.backup, to: backup }
+volume_labels: [ com.example.retention ]
+labels:
+  - match: { stack: mailcow }
+    labels: { team: mail }
+  - match: { stack: "mail*", container: c, image: i, volume: v, path: /p }
+    labels: { team: "${TEAM:-mail}" }
 directories:
   - path: ${ROOT}/backup
     labels: { stack: backup, owner: borg }
   - path: /home/*
     labels: { user: "$1" }
 images:
-  enabled: false
   check_interval: 6h
   forget_after: 48h
-  exclude:
-    containers: [ "buildx_*" ]
-    images: [ "${REG}/*" ]
   registries:
     - host: ghcr.io
       username: ${U}
       password: ${P}
     - { host: index.docker.io, username: x, password: "${HUB:-}" }
-  container_labels:
-    - com.example.team
-    - { from: com.example.owner, to: owner_team }
-  labels:
-    - match: { stack: "mail*", container: c, image: i }
-      labels: { team: "${TEAM:-mail}" }
 `
 	c, err := Parse([]byte(data), env(map[string]string{"ROOT": "/srv", "REG": "ghcr.io/x", "U": "u", "P": "p"}), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.Global.ReconcileInterval.D() != 30*time.Second || c.Global.WalkFilesPerSecond != 100 ||
-		c.Docker.Enabled {
-		t.Fatalf("global/docker not read: %+v", c)
+		c.Enabled(FnVolume) || !c.Enabled(FnDirectory) {
+		t.Fatalf("settings/disable not read: %+v", c)
 	}
-	if got := c.Docker.ContainerLabels[0].Target("container_label_"); got != "container_label_com_example_team" {
+	if got := c.ContainerLabels[0].Target("container_label_"); got != "container_label_com_example_team" {
 		t.Fatalf("target %q", got)
 	}
-	if got := c.Docker.ContainerLabels[1].Target("container_label_"); got != "backup" {
+	if got := c.ContainerLabels[1].Target("container_label_"); got != "backup" {
 		t.Fatalf("target %q", got)
 	}
 	if c.Directories[0].Path != "/srv/backup" || c.Directories[1].Labels["user"] != "$1" {
 		t.Fatalf("directories: %+v", c.Directories)
 	}
 	im := c.Images
-	if im.Enabled || im.CheckInterval.D() != 6*time.Hour || im.Exclude.Images[0] != "ghcr.io/x/*" || im.Exclude.Containers[0] != "buildx_*" {
+	if c.Enabled(FnImage) || im.CheckInterval.D() != 6*time.Hour || c.Exclude.Images[0] != "ghcr.io/x/*" ||
+		c.Exclude.Containers[0] != "buildx_*" || c.Exclude.Volumes[0] != "buildx_*" {
 		t.Fatalf("images: %+v", im)
 	}
 	if r, ok := im.Registry("ghcr.io"); !ok || r.Username != "u" || r.Password != "p" {
@@ -103,10 +96,8 @@ images:
 	if _, ok := im.Registry("quay.io"); ok {
 		t.Fatal("quay")
 	}
-	if im.ContainerLabels[1].Target("container_label_") != "owner_team" {
-		t.Fatalf("%+v", im.ContainerLabels)
-	}
-	if r := im.Labels[0]; r.Match.Stack != "mail*" || r.Match.Container != "c" || r.Match.Image != "i" || r.Labels["team"] != "mail" {
+	if r := c.Labels[1]; r.Match.Stack != "mail*" || r.Match.Container != "c" || r.Match.Image != "i" ||
+		r.Match.Volume != "v" || r.Match.Path != "/p" || r.Labels["team"] != "mail" {
 		t.Fatalf("%+v", r)
 	}
 }
@@ -117,13 +108,20 @@ func TestInvalidImages(t *testing.T) {
 		"images: { forget_after: -1h }",
 		"images: { registries: [ { username: x } ] }",
 		"images: { registries: [ { host: docker.io }, { host: index.docker.io } ] }",
-		"images: { container_labels: [ '' ] }",
-		"images: { container_labels: [ { from: a, to: '1x' } ] }",
-		"images: { container_labels: [ { from: a, to: stack } ] }",
-		"images: { container_labels: [ a.b, a_b ] }",
-		"images: { labels: [ { labels: { mode: x } } ] }",
-		"images: { labels: [ { labels: { 'a-b': x } } ] }",
-		"images: { exclude: { images: [ '${MISSING}' ] } }",
+		"container_labels: [ '' ]",
+		"container_labels: [ { from: a, to: '1x' } ]",
+		"container_labels: [ { from: a, to: stack } ]",
+		"container_labels: [ { from: a, to: mode } ]",
+		"container_labels: [ { from: a, to: path } ]",
+		"volume_labels: [ { from: a, to: volume } ]",
+		"container_labels: [ a.b, a_b ]",
+		"labels: [ { labels: { mode: x } } ]",
+		"labels: [ { labels: { path: x } } ]",
+		"labels: [ { labels: { 'a-b': x } } ]",
+		"docker: { socket: x }",
+		"images: { exclude: { images: [ x ] } }",
+		"images: { labels: [] }",
+		"exclude: { images: [ '${MISSING}' ] }",
 	} {
 		if _, err := Parse([]byte(data), env(nil), nil); err == nil {
 			t.Errorf("%q: expected error", data)
@@ -155,36 +153,39 @@ func TestDirectoriesOnWindows(t *testing.T) {
 
 func TestInvalid(t *testing.T) {
 	cases := map[string]string{
-		"unknown key":      "foo: 1",
-		"log level":        "global: { log_level: loud }",
-		"log format":       "global: { log_format: xml }",
-		"unset var global": "global: { rootfs: \"${NOPE}\" }",
-		"unknown nested":   "global: { bar: 1 }",
-		"zero duration":    "global: { reconcile_interval: 0s }",
-		"bad duration":     "global: { reconcile_interval: soon }",
-		"negative rate":    "global: { walk_files_per_second: -1 }",
-		"huge rate":        "global: { walk_files_per_second: 2000000000 }",
-		"range order":      "global: { project_ids: { from: 10, to: 10 } }",
-		"range zero":       "global: { project_ids: { from: 0, to: 10 } }",
-		"range max":        "global: { project_ids: { from: 1, to: 4294967295 } }",
-		"label name":       "directories: [ { path: /srv, labels: { 1x: a } } ]",
-		"label dunder":     "directories: [ { path: /srv, labels: { __x: a } } ]",
-		"own label":        "directories: [ { path: /srv, labels: { path: a } } ]",
-		"own label rule":   "docker: { labels: [ { labels: { stack: a } } ] }",
-		"own label to":     "docker: { container_labels: [ { from: a, to: owner } ] }",
-		"dup target":       "docker: { container_labels: [ a.b, a_b ] }",
-		"ref unknown key":  "docker: { container_labels: [ { name: a } ] }",
-		"relative":         "directories: [ { path: srv } ]",
-		"double star":      "directories: [ { path: /srv/** } ]",
-		"root":             "directories: [ { path: / } ]",
-		"excluded":         "directories: [ { path: /var/lib/docker/volumes } ]",
-		"excluded glob":    "directories: [ { path: /proc/* } ]",
-		"unset var":        "directories: [ { path: \"${NOPE}\" } ]",
-		"unset vars":       "directories: [ { path: \"${NOPE}\" }, { path: \"${NOPE2}\" } ]",
-		"unterminated var": "directories: [ { path: \"${NOPE\" } ]",
-		"ref not a string": "docker: { container_labels: [ { from: [a] } ] }",
-		"ref sequence":     "docker: { container_labels: [ [a] ] }",
-		"empty from":       "docker: { volume_labels: [ \"\" ] }",
+		"unknown key":       "foo: 1",
+		"log level":         "log_level: loud",
+		"log format":        "log_format: xml",
+		"unset var setting": "rootfs: \"${NOPE}\"",
+		"old global":        "global: { reconcile_interval: 5s }",
+		"zero duration":     "reconcile_interval: 0s",
+		"bad duration":      "reconcile_interval: soon",
+		"negative rate":     "walk_files_per_second: -1",
+		"huge rate":         "walk_files_per_second: 2000000000",
+		"range order":       "project_ids: { from: 10, to: 10 }",
+		"range zero":        "project_ids: { from: 0, to: 10 }",
+		"range max":         "project_ids: { from: 1, to: 4294967295 }",
+		"unknown function":  "disable: [ cpu ]",
+		"socket needed":     "docker_socket: \"\"",
+		"socket for image":  "{ disable: [ volume ], docker_socket: \"\" }",
+		"label name":        "directories: [ { path: /srv, labels: { 1x: a } } ]",
+		"label dunder":      "directories: [ { path: /srv, labels: { __x: a } } ]",
+		"own label":         "directories: [ { path: /srv, labels: { path: a } } ]",
+		"own label rule":    "labels: [ { labels: { stack: a } } ]",
+		"own label to":      "container_labels: [ { from: a, to: owner } ]",
+		"dup target":        "container_labels: [ a.b, a_b ]",
+		"ref unknown key":   "container_labels: [ { name: a } ]",
+		"relative":          "directories: [ { path: srv } ]",
+		"double star":       "directories: [ { path: /srv/** } ]",
+		"root":              "directories: [ { path: / } ]",
+		"excluded":          "directories: [ { path: /var/lib/docker/volumes } ]",
+		"excluded glob":     "directories: [ { path: /proc/* } ]",
+		"unset var":         "directories: [ { path: \"${NOPE}\" } ]",
+		"unset vars":        "directories: [ { path: \"${NOPE}\" }, { path: \"${NOPE2}\" } ]",
+		"unterminated var":  "directories: [ { path: \"${NOPE\" } ]",
+		"ref not a string":  "container_labels: [ { from: [a] } ]",
+		"ref sequence":      "container_labels: [ [a] ]",
+		"empty from":        "volume_labels: [ \"\" ]",
 	}
 	for name, data := range cases {
 		if _, err := Parse([]byte(data), env(nil), nil); err == nil {
@@ -225,7 +226,7 @@ func TestNotADirectory(t *testing.T) {
 func TestSource(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "c.yml")
-	if err := os.WriteFile(f, []byte("global: { reconcile_interval: 5s }"), 0o644); err != nil {
+	if err := os.WriteFile(f, []byte("reconcile_interval: 5s"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	vars := map[string]string{}
@@ -252,9 +253,9 @@ func TestSource(t *testing.T) {
 }
 
 func TestExpandSettings(t *testing.T) {
-	data := "global: { rootfs: \"${R}\" }\ndocker: { socket: \"\" }"
+	data := "{ disable: [ volume, image ], rootfs: \"${R}\", docker_socket: \"\" }"
 	c, err := Parse([]byte(data), env(map[string]string{"R": "/"}), nil)
-	if err != nil || c.Global.RootFS != "/" || c.Docker.Socket != "" {
+	if err != nil || c.Global.RootFS != "/" || c.DockerSocket != "" {
 		t.Fatalf("%+v %v", c, err)
 	}
 }
@@ -318,5 +319,45 @@ func TestSanitize(t *testing.T) {
 func skipOnWindows(t *testing.T) {
 	if windows {
 		t.Skip("no directories on Windows")
+	}
+}
+
+func TestRules(t *testing.T) {
+	c, err := Parse([]byte(`
+labels:
+  - match: { stack: app }
+    labels: { a: "1" }
+  - match: { volume: "v*" }
+    labels: { b: "2" }
+  - match: { image: "nginx*" }
+    labels: { c: "3" }
+  - match: { path: "/srv/*" }
+    labels: { a: "4" }
+  - match: { container: web }
+    labels: { d: "5" }
+`), env(nil), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stack, vol, path, ctr := "app", "vol1", "/srv/x", "web"
+	if got := c.RuleLabels(Subject{Stack: &stack, Volume: &vol, Path: &path, Container: &ctr}); !reflect.DeepEqual(got,
+		map[string]string{"a": "4", "b": "2", "d": "5"}) {
+		t.Fatalf("volume: %v", got)
+	}
+	if got := c.RuleLabels(Subject{Stack: &stack, Container: &ctr, Images: []string{"nginx:1"}}); !reflect.DeepEqual(got,
+		map[string]string{"a": "1", "c": "3", "d": "5"}) {
+		t.Fatalf("image: %v", got)
+	}
+	if got := c.RuleLabels(Subject{Stack: &stack, Path: &path}); !reflect.DeepEqual(got, map[string]string{"a": "4"}) {
+		t.Fatalf("directory: %v", got)
+	}
+	labels := map[string]string{LabelEnable: "false"}
+	if !c.ExcludedContainer("x", labels) || c.ExcludedContainer("x", nil) {
+		t.Fatal("enable label")
+	}
+	c.Exclude = Exclude{Containers: []string{"db*"}, Images: []string{"docker.io/library/redis*"}}
+	if !c.ExcludedContainer("db1", nil) || !c.ExcludedContainer("x", nil, "redis:7", "docker.io/library/redis:7") ||
+		c.ExcludedContainer("x", nil, "nginx") {
+		t.Fatal("globs")
 	}
 }

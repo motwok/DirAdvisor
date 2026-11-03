@@ -108,16 +108,14 @@ d run -d --name rl-y "$RL/y:1" sleep 1d >/dev/null
 
 step "start"
 config <<EOF
-global:
-  reconcile_interval: 5s
-  rootfs: /
-docker:
-  enabled: false
+disable: [ directory, volume ]
+reconcile_interval: 5s
+rootfs: /
+exclude:
+  containers: ["skip-*", "hatchlens"]
+  images: ["docker.io/library/registry:*", "python:*"]
 images:
   check_interval: 30s
-  exclude:
-    containers: ["skip-*", "hatchlens"]
-    images: ["docker.io/library/registry:*", "python:*"]
 EOF
 d run -d --name hatchlens -e GOCOVERDIR=/cover -v /cover:/cover -e HATCHLENS_CONFIG_FILE=/data/config.yml \
   -v /var/run/docker.sock:/var/run/docker.sock:ro -v /data:/data \
