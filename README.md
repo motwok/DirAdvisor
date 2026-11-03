@@ -11,9 +11,9 @@
 Per-directory disk usage, image update checks and CPU, memory, disk and network usage of all
 containers for Prometheus.
 
-HatchLens runs as a container next to [cAdvisor](https://github.com/google/cadvisor) and
-[node_exporter](https://github.com/prometheus/node_exporter), on Linux and Windows Docker hosts, or as a
-Windows service on the host. It reports how much space every Docker volume
+HatchLens runs as a container on Linux and Windows Docker hosts, or as a Windows service on the host,
+next to the host exporter: [node_exporter](https://github.com/prometheus/node_exporter) on Linux,
+[windows_exporter](https://github.com/prometheus-community/windows_exporter) on Windows. It reports how much space every Docker volume
 and any configured directory uses, and which container and Compose stack owns it, without walking the
 file tree. It also reports for every container whether its registry has a newer image than the one it
 runs, and how much CPU, memory, disk I/O and network traffic it uses, per Docker network.
@@ -23,7 +23,7 @@ runs, and how much CPU, memory, disk I/O and network traffic it uses, per Docker
 ## Why
 
 - cAdvisor only reports a container's writable layer, not its volumes.
-- node_exporter reports whole filesystems, not directories.
+- node_exporter and windows_exporter report whole filesystems, not directories.
 - Tools based on `du` have to touch every file on every run. On spinning disks with many small files that
   is slow and costly, so they can only run rarely.
 
