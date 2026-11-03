@@ -131,7 +131,7 @@ func TestServiceUnreachable(t *testing.T) {
 	if m, _ := s.MountOf("relative"); m.Point != "relative" {
 		t.Fatal("drive of a path without drive")
 	}
-	if _, err := s.Endpoints(context.Background()); err == nil || !strings.Contains(err.Error(), "host service unreachable: no pipe") {
+	if _, err := s.Endpoints(context.Background()); err == nil || !strings.HasPrefix(err.Error(), "host service unreachable: ") || !strings.Contains(err.Error(), "no pipe") {
 		t.Fatalf("endpoints: %v", err)
 	}
 	if !AdminAction(InstallHostService) || !AdminAction(EnableUSNJournal) {
