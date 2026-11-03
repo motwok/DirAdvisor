@@ -139,6 +139,12 @@ func (l local) usage(_ context.Context, v string, min uint32) (map[uint32]winhos
 	return l.b.Usage(v, min)
 }
 
+// unreachable hides the cause on purpose: a missing pipe is ERROR_FILE_NOT_FOUND,
+// which must not read as a missing path.
+type unreachable struct{ err error }
+
+func (u unreachable) Error() string { return "host service unreachable: " + u.err.Error() }
+
 // pipe calls the HatchLens Host service over HTTP on its named pipe.
 type pipe struct{ hc, walk *http.Client }
 
@@ -154,7 +160,7 @@ func (p *pipe) call(ctx context.Context, c *http.Client, method, path string, q 
 	}
 	resp, err := c.Do(req)
 	if err != nil {
-		return err
+		return unreachable{err}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {

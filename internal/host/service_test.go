@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"net"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/motwok/HatchLens/internal/winhost"
@@ -123,11 +124,15 @@ func TestServiceUnreachable(t *testing.T) {
 	if r, _ := s.QuotaStatus(m); r != InstallHostService {
 		t.Fatalf("status %q", r)
 	}
+	missing := NewService(func(context.Context, string, string) (net.Conn, error) { return nil, fs.ErrNotExist })
+	if m, err := missing.MountOf("/C:/data"); err != nil || m.Point != "/C:" {
+		t.Fatalf("a missing pipe is an unreachable service, not a missing path: %+v %v", m, err)
+	}
 	if m, _ := s.MountOf("relative"); m.Point != "relative" {
 		t.Fatal("drive of a path without drive")
 	}
-	if _, err := s.Endpoints(context.Background()); err == nil {
-		t.Fatal("endpoints")
+	if _, err := s.Endpoints(context.Background()); err == nil || !strings.Contains(err.Error(), "host service unreachable: no pipe") {
+		t.Fatalf("endpoints: %v", err)
 	}
 	if !AdminAction(InstallHostService) || !AdminAction(EnableUSNJournal) {
 		t.Fatal("both are admin actions")
