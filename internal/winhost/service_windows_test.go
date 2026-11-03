@@ -151,19 +151,19 @@ func TestServe(t *testing.T) {
 	listen = tcpListen(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error)
-	go func() { done <- serve(ctx, quiet()) }()
+	go func() { done <- serve(ctx, quiet(), "") }()
 	time.Sleep(50 * time.Millisecond)
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
 	listen = func(string) (net.Listener, error) { return nil, errors.New("pipe in use") }
-	if serve(context.Background(), quiet()) == nil {
+	if serve(context.Background(), quiet(), "") == nil {
 		t.Fatal("listen error")
 	}
 	listen = func(string) (net.Listener, error) { return badListener{}, nil }
 	processToken = func(windows.Handle, uint32, *windows.Token) error { return errors.New("x") }
-	err := serve(context.Background(), quiet())
+	err := serve(context.Background(), quiet(), "")
 	processToken = windows.OpenProcessToken
 	if err == nil {
 		t.Fatal("accept error")
@@ -182,14 +182,14 @@ func TestExecute(t *testing.T) {
 	req := make(chan svc.ChangeRequest)
 	st := make(chan svc.Status, 10)
 	res := make(chan uint32)
-	go func() { _, code := service{quiet()}.Execute(nil, req, st); res <- code }()
+	go func() { _, code := service{log: quiet()}.Execute(nil, req, st); res <- code }()
 	req <- svc.ChangeRequest{Cmd: svc.Interrogate, CurrentStatus: svc.Status{State: svc.Running}}
 	req <- svc.ChangeRequest{Cmd: svc.Stop}
 	if code := <-res; code != 0 {
 		t.Fatalf("stop: %d", code)
 	}
 	listen = func(string) (net.Listener, error) { return nil, errors.New("pipe in use") }
-	if _, code := (service{quiet()}).Execute(nil, make(chan svc.ChangeRequest), make(chan svc.Status, 10)); code != 1 {
+	if _, code := (service{log: quiet()}).Execute(nil, make(chan svc.ChangeRequest), make(chan svc.Status, 10)); code != 1 {
 		t.Fatalf("failed: %d", code)
 	}
 }

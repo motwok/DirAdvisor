@@ -150,8 +150,15 @@ func TestHostSocket(t *testing.T) {
 		if err != nil || c.Directories[0].Path != "/D:/data/x" {
 			t.Fatalf("Windows path: %+v %v", c, err)
 		}
-	} else if err == nil {
-		t.Fatal("a Windows path is not absolute on Linux")
+	} else if err == nil || !strings.Contains(err.Error(), `D:\data\x needs host_socket`) {
+		t.Fatalf("a Windows path on Linux needs the host service: %v", err)
+	}
+	c, err = Parse([]byte("host_socket: tcp://host.docker.internal:8091\nhost_token: ${T}\ndirectories: [ { path: 'D:\\data' } ]"), env(map[string]string{"T": "tok"}), nil)
+	if err != nil || c.HostToken != "tok" || c.Directories[0].Path != "/D:/data" {
+		t.Fatalf("TCP: %+v %v", c, err)
+	}
+	if _, err := Parse([]byte(`host_socket: tcp://host.docker.internal:8091`), env(nil), nil); err == nil || !strings.Contains(err.Error(), "host_token") {
+		t.Fatalf("TCP without token: %v", err)
 	}
 	_, err = Parse([]byte(`host_socket: ""`), env(nil), nil)
 	if windows != (err != nil) {

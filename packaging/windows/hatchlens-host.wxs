@@ -1,20 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- HatchLens Host service. Build: wix build -arch x64 -d Version=X.Y.Z -d Exe=hatchlens-host.exe
-     -d Rootfs=hatchlens-wsl.tar (packaging/wsl, used by hatchlens-host enable-quota) -->
+     -d Rootfs=hatchlens-wsl.tar (packaging/wsl, used by hatchlens-host enable-quota)
+     Install with TCP=127.0.0.1:PORT for the TCP listener (Docker Desktop with Linux containers). -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="HatchLens Host" Manufacturer="Emmo Emminghaus" Version="$(Version)"
            UpgradeCode="F3D0F8B3-9EC1-455C-9E85-F978AF4B9ECF" Scope="perMachine" Compressed="yes">
     <MajorUpgrade AllowSameVersionUpgrades="yes"
                   DowngradeErrorMessage="A newer version of HatchLens Host is already installed." />
     <MediaTemplate EmbedCab="yes" />
+    <Property Id="TCP" Secure="yes" />
+    <SetProperty Id="TCPARG" Value="-tcp [TCP]" Before="InstallInitialize" Sequence="execute" Condition="TCP" />
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="HatchLens">
         <Component Id="HostService">
           <File Id="HostExe" Source="$(Exe)" Name="hatchlens-host.exe" KeyPath="yes" />
           <ServiceInstall Id="HostServiceInstall" Name="HatchLensHost" DisplayName="HatchLens Host"
                           Description="Tells the HatchLens container the HNS networks and directory sizes."
-                          Type="ownProcess" Start="auto" Account="LocalSystem" ErrorControl="normal" Vital="yes" />
+                          Type="ownProcess" Start="auto" Account="LocalSystem" ErrorControl="normal" Vital="yes"
+                          Arguments="[TCPARG]" />
           <ServiceControl Id="HostServiceControl" Name="HatchLensHost" Start="install" Stop="both"
                           Remove="uninstall" Wait="yes" />
         </Component>

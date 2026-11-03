@@ -60,6 +60,7 @@ type Config struct {
 	Labels          []LabelRule `yaml:"labels"`
 	DockerSocket    string      `yaml:"docker_socket"`
 	HostSocket      string      `yaml:"host_socket"`
+	HostToken       string      `yaml:"host_token"`
 	Directories     []Directory `yaml:"directories"`
 	Images          Images      `yaml:"images"`
 }
@@ -337,6 +338,7 @@ func (c *Config) expand(lookup LookupFunc) error {
 	ex("rootfs", &g.RootFS)
 	ex("docker_socket", &c.DockerSocket)
 	ex("host_socket", &c.HostSocket)
+	ex("host_token", &c.HostToken)
 	for _, l := range []struct {
 		name string
 		list []string
@@ -463,6 +465,9 @@ func (c *Config) validate(stat StatFunc) error {
 			return fmt.Errorf("host_socket is empty, but %s need it; add them to disable", strings.Join(need, ", "))
 		}
 	}
+	if strings.HasPrefix(c.HostSocket, "tcp://") && c.HostToken == "" {
+		return errors.New("host_socket over TCP needs host_token")
+	}
 	g := c.Global
 	switch g.LogLevel {
 	case "debug", "info", "warn", "error":
@@ -531,6 +536,9 @@ func (c *Config) validate(stat StatFunc) error {
 		}
 		p = path.Clean(p)
 		c.Directories[i].Path = p
+		if Drive(p) && c.HostSocket == "" {
+			return fmt.Errorf("%s: %s needs host_socket", where, Display(p))
+		}
 		glob := strings.Contains(p, "*")
 		if (!glob && Excluded(p, "")) || (glob && excludedTree(StaticPrefix(p), "")) {
 			return fmt.Errorf("%s: %s is excluded", where, p)

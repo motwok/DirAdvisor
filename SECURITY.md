@@ -73,6 +73,10 @@ HatchLens deliberately does things that can look alarming but are by design:
   the backup privilege, so it can read the sizes of all files and the USN journal of the volumes; it
   changes nothing on them. Its named pipe `\\.\pipe\hatchlens-host` is open to administrators and
   SYSTEM only, which is why the container runs as `ContainerAdministrator`.
+- installed with `TCP=127.0.0.1:PORT` the HatchLens Host service also listens on that **loopback**
+  port (other addresses are refused) for a Linux container under Docker Desktop. Every request needs
+  the token from `%ProgramData%\HatchLens\host-token`, which only administrators and SYSTEM can read.
+  Anyone holding the token can list directories and their sizes through the service.
 - **`hatchlens-host enable-quota`** is the one command that changes a file system: run by hand by an
   administrator, it sets the ext4 features `project` and `quota` on the data disk of Docker Desktop
   with `tune2fs`, from a temporary WSL distribution (Alpine Linux with e2fsprogs) that the HatchLens

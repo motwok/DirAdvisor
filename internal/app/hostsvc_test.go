@@ -26,7 +26,7 @@ func TestNetNames(t *testing.T) {
 	srv := httptest.NewServer(winhost.Handler(hnsFake{}, "t"))
 	defer srv.Close()
 	addr := srv.Listener.Addr().String()
-	svc := host.NewService(func(ctx context.Context, _, _ string) (net.Conn, error) {
+	svc := host.NewService("", func(ctx context.Context, _, _ string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, "tcp", addr)
 	})
 	nets := `[{"Name":"nat","Options":{"com.docker.network.windowsshim.hnsid":"AA"}},{"Name":"none","Options":{}}]`
@@ -39,7 +39,7 @@ func TestNetNames(t *testing.T) {
 	if _, err := netNames(svc, bad)(context.Background()); err == nil {
 		t.Fatal("networks error")
 	}
-	down := host.NewService(func(context.Context, string, string) (net.Conn, error) { return nil, errors.New("no pipe") })
+	down := host.NewService("", func(context.Context, string, string) (net.Conn, error) { return nil, errors.New("no pipe") })
 	if _, err := netNames(down, dc)(context.Background()); err == nil {
 		t.Fatal("service error")
 	}

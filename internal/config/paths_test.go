@@ -30,12 +30,11 @@ func TestPaths(t *testing.T) {
 			t.Errorf("NativePath(%q) = %q, want %q", in, got, want)
 		}
 	}
-	if windows {
-		if Host(`C:\x`) != "/C:/x" || Display("/C:/x") != `C:\x` {
-			t.Fatal("Host/Display on Windows")
-		}
-	} else if Host(`C:\x`) != `C:\x` || Display("/C:/x") != "/C:/x" {
-		t.Fatal("Host/Display elsewhere")
+	if Host(`C:\x`) != "/C:/x" || Display("/C:/x") != `C:\x` || Host("/srv") != "/srv" || Display("/srv") != "/srv" {
+		t.Fatal("Host/Display")
+	}
+	if !Drive("/C:") || !Drive("/C:/x") || Drive("/C:x") || Drive("/srv") || Drive("/1:/x") {
+		t.Fatal("Drive")
 	}
 	if !Excluded("/C:", "") || !Excluded("/C:/", "") || Excluded("/C:/data", "") {
 		t.Fatal("a whole drive is excluded, a directory on it is not")

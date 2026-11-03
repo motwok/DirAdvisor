@@ -10,6 +10,7 @@ import (
 	"os"
 
 	"github.com/motwok/HatchLens/internal/config"
+	"github.com/motwok/HatchLens/internal/docker"
 	"github.com/motwok/HatchLens/internal/host"
 )
 
@@ -20,4 +21,14 @@ func configEnv(bool) func(string) string { return os.Getenv }
 
 func nativeStorage(*config.Config, bool) {}
 
-func hostService(context.Context, *config.Config, *slog.Logger, bool) *host.Service { return nil }
+// hostService: under Docker Desktop the HatchLens Host service on the Windows
+// host measures directories on Windows drives, over TCP.
+func hostService(_ context.Context, cfg *config.Config, _ *slog.Logger, _ bool) *host.Service {
+	if cfg.HostSocket == "" {
+		return nil
+	}
+	return host.NewService(cfg.HostToken, docker.Dial(cfg.HostSocket))
+}
+
+// withHost keeps the local project quotas for everything but Windows drives.
+func withHost(local host.FS, svc *host.Service) host.FS { return host.Split{Local: local, Remote: svc} }

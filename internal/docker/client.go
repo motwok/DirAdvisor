@@ -188,9 +188,15 @@ func New(socket string) *Client {
 	}
 }
 
-// Dial connects to a Unix socket (Linux) or named pipe (Windows); also for the
-// host service.
+// Dial connects to a Unix socket (Linux), a named pipe (Windows) or
+// tcp://host:port; also for the host service.
 func Dial(socket string) func(ctx context.Context, network, addr string) (net.Conn, error) {
+	if addr, ok := strings.CutPrefix(socket, "tcp://"); ok {
+		return func(ctx context.Context, _, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "tcp", addr)
+		}
+	}
 	return dialer(socket)
 }
 

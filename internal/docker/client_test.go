@@ -137,6 +137,19 @@ func TestClient(t *testing.T) {
 	}
 }
 
+func TestDialTCP(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer srv.Close()
+	conn, err := Dial("tcp://"+srv.Listener.Addr().String())(context.Background(), "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.Close()
+	if Dial("/nonexistent.sock") == nil {
+		t.Fatal("socket dialer")
+	}
+}
+
 func TestAuthHeader(t *testing.T) {
 	var seen string
 	c := NewWithHTTP(rt{http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

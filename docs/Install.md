@@ -278,7 +278,27 @@ container usage and traffic per Docker network work as on Linux. The differences
   removes the distribution again. Then start Docker Desktop. A copy of the disk beforehand does no
   harm. A reset of Docker Desktop ("Clean / Purge data", "Reset to factory defaults") creates a new
   disk without the feature; the admin action shows up again.
-- Directories on Windows drives (bind mounts of `C:\...`) cannot be measured in this mode.
+- Directories on Windows drives (`C:\...`) are measured by the HatchLens Host service on the Windows
+  host, reached over TCP on the loopback address, which Docker Desktop forwards as
+  `host.docker.internal`. Install the MSI with a port, as administrator:
+
+  ```powershell
+  msiexec /i hatchlens-host-X.Y.Z.msi /qn TCP=127.0.0.1:8091
+  ```
+
+  The service creates `%ProgramData%\HatchLens\host-token` (readable by administrators only) and
+  accepts TCP requests only with that token. Pass it to the container, for example as an environment
+  variable, and add to the config:
+
+  ```yaml
+  host_socket: tcp://host.docker.internal:8091
+  host_token: ${HATCHLENS_HOST_TOKEN}
+  directories:
+    - path: 'C:\data'                # Windows path: through the host service
+    - path: /srv/x                   # anything else: project quotas in the Docker Desktop VM
+  ```
+
+  Pass `TCP=...` again when updating the MSI; without it the service listens on its pipe only.
 
 ## Update and rollback
 
