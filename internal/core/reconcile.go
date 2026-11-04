@@ -123,6 +123,7 @@ func (c *Core) excludedContainers(ctx context.Context, cfg *config.Config, cs []
 				written = j.Config.Image
 				c.cfgImages[ct.ID] = written
 			}
+			written = ref.Unpinned(written, ct.Labels)
 			images = []string{written}
 			if !ref.IsImageID(written, ct.ImageID) {
 				images = append(images, ref.Parse(written).String())
@@ -439,7 +440,11 @@ func (c *Core) dedupe(cands []*candidate) {
 	byPath := map[string][]*candidate{}
 	for _, cd := range cands {
 		if cd.reason == "" {
-			byPath[cd.path] = append(byPath[cd.path], cd)
+			k := cd.path
+			if config.Drive(k) {
+				k = strings.ToLower(k)
+			}
+			byPath[k] = append(byPath[k], cd)
 		}
 	}
 	for _, group := range byPath {

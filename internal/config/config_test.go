@@ -371,6 +371,19 @@ labels:
 	if got := c.RuleLabels(Subject{Stack: &stack, Path: &path}); !reflect.DeepEqual(got, map[string]string{"a": "4"}) {
 		t.Fatalf("directory: %v", got)
 	}
+	if Opt("") != nil || *Opt("x") != "x" {
+		t.Fatal("Opt")
+	}
+	any, err := Parse([]byte("labels: [ { match: { stack: '*' }, labels: { s: '1' } } ]"), env(nil), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := any.ExtraLabels("web", nil, "", nil, func(string) bool { return false }, nil); len(got) != 0 {
+		t.Fatalf("no stack, no match (LBL-7): %v", got)
+	}
+	if got := any.ExtraLabels("web", nil, "app", nil, func(string) bool { return false }, nil); got["s"] != "1" {
+		t.Fatalf("stack matches: %v", got)
+	}
 	labels := map[string]string{LabelEnable: "false"}
 	if !c.ExcludedContainer("x", labels) || c.ExcludedContainer("x", nil) {
 		t.Fatal("enable label")

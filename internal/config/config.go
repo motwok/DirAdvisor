@@ -186,6 +186,14 @@ type Subject struct {
 	Images                         []string
 }
 
+// Opt is the subject field for s: nil for "", a key the series does not have.
+func Opt(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
 // Matches reports whether every key given in the rule exists for s and matches.
 func (m Match) Matches(s Subject) bool {
 	key := func(p string, v *string, match func(p, v string) bool) bool {
@@ -219,7 +227,7 @@ func (c *Config) ExtraLabels(name string, labels map[string]string, stack string
 			set(n, v)
 		}
 	}
-	for k, v := range c.RuleLabels(Subject{Stack: &stack, Container: &name, Images: images}) {
+	for k, v := range c.RuleLabels(Subject{Stack: Opt(stack), Container: &name, Images: images}) {
 		out[k] = v
 	}
 	return out

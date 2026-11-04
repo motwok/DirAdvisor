@@ -57,6 +57,18 @@ func TestIsImageID(t *testing.T) {
 	}
 }
 
+func TestUnpinned(t *testing.T) {
+	swarm := map[string]string{SwarmTaskLabel: "t"}
+	pinned := "nginx:1.27@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec"
+	if Unpinned(pinned, swarm) != "nginx:1.27" || Unpinned(pinned, nil) != pinned {
+		t.Fatal("tag and digest")
+	}
+	noTag := "nginx@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec"
+	if Unpinned(noTag, swarm) != noTag || Unpinned("nginx:1.27", swarm) != "nginx:1.27" {
+		t.Fatal("pinned or plain")
+	}
+}
+
 func TestRepoDigest(t *testing.T) {
 	repo, d, ok := RepoDigest("nginx@sha256:aa")
 	if !ok || repo != "docker.io/library/nginx" || d != "sha256:aa" {

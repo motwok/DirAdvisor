@@ -86,6 +86,40 @@ func TestOwnerSelf(t *testing.T) {
 	}
 }
 
+// A read-only mount by HatchLens itself is ignored (OWN-8): the writer owns
+// the volume and it is not the own data volume.
+func TestOwnerSelfReadOnly(t *testing.T) {
+	vol := docker.Volume{Name: "shared"}
+	self := "abcdef1234567890"
+	cs := []docker.Container{
+		ctr(self, "hatchlens", "running", 1, "", docker.Mount{Type: "volume", Name: "shared", RW: false}),
+		ctr("2", "writer", "running", 2, "", rw("shared")),
+	}
+	if o := resolveOwner(vol, cs, nil, self); o.Owner != "writer" {
+		t.Fatalf("read-only self: %+v", o)
+	}
+}
+
+// A rule naming a key the series does not have does not match (LBL-7).
+func TestRuleNeedsKey(t *testing.T) {
+	cfg := config.Default()
+	cfg.Labels = []config.LabelRule{
+		{Match: config.Match{Stack: "*"}, Labels: map[string]string{"s": "1"}},
+		{Match: config.Match{Container: "*"}, Labels: map[string]string{"c": "1"}},
+	}
+	l, _ := volumeLabels(cfg, docker.Volume{Name: "v"}, volPath, ownership{}, nil)
+	if len(l) != 0 {
+		t.Fatalf("no stack, no owner: %v", l)
+	}
+	l, _ = volumeLabels(cfg, docker.Volume{Name: "v"}, volPath, ownership{Owner: "web", Stack: "app"}, nil)
+	if l["s"] != "1" || l["c"] != "1" {
+		t.Fatalf("both keys: %v", l)
+	}
+	if d := withRules(cfg, "", "/srv/x", nil); len(d) != 0 {
+		t.Fatalf("directory without stack: %v", d)
+	}
+}
+
 func TestLabels(t *testing.T) {
 	cfg := config.Default()
 	cfg.ContainerLabels = []config.LabelRef{{From: "com.example.team"}, {From: "x", To: "renamed"}}

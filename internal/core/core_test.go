@@ -12,6 +12,7 @@ import (
 	"github.com/motwok/HatchLens/internal/config"
 	"github.com/motwok/HatchLens/internal/docker"
 	"github.com/motwok/HatchLens/internal/host"
+	"github.com/motwok/HatchLens/internal/ref"
 	"github.com/motwok/HatchLens/internal/state"
 )
 
@@ -404,6 +405,16 @@ func TestExcludedOwner(t *testing.T) {
 	}
 	e.cfg.Exclude = config.Exclude{Containers: []string{"db*"}, Images: []string{"docker.io/library/redis*"}}
 	e.reconcile()
+	// A Swarm task's image is matched without the digest Swarm pinned (REF-4).
+	e.container("swarm", "swarm", "running", 1, map[string]string{ref.SwarmTaskLabel: "t1"})
+	e.dk.configs["swarm"] = "redis:7@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+	e.cfg.Exclude.Images = append(e.cfg.Exclude.Images, "redis:7")
+	snap, err := e.c.readDocker(context.Background(), e.cfg)
+	if err != nil || !snap.excluded["swarm"] {
+		t.Fatalf("swarm task not excluded by tag: %v %v", snap.excluded, err)
+	}
+	delete(e.c.cfgImages, "swarm")
+	e.dk.containers = e.dk.containers[:len(e.dk.containers)-1]
 	for _, v := range []string{"db", "byimage"} {
 		if e.entry(volPathOf(v)) != nil || !e.c.st.Entries[state.VolumeKey(v)].PendingReset {
 			t.Fatalf("%s must be excluded and reset", v)
