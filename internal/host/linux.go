@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -69,10 +70,13 @@ func (l *Linux) join(p string) string {
 	return filepath.Join(l.Root, p)
 }
 
+// Stat: only a missing path is gone; any other error (EACCES, EIO) counts as
+// present, so nothing is released on it.
 func (l *Linux) Stat(p string) (bool, bool) {
 	fi, err := os.Lstat(l.join(p))
 	if err != nil {
-		return false, false
+		gone := errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR)
+		return !gone, !gone
 	}
 	return true, fi.IsDir()
 }
@@ -448,7 +452,10 @@ func (w *walker) dir(d *os.File, hpath string) error {
 				continue
 			}
 			err = w.set(int(c.Fd()), mode == syscall.S_IFDIR)
-			if err == nil && mode == syscall.S_IFDIR {
+			if errors.Is(err, syscall.EPERM) && mode == syscall.S_IFREG {
+				// Immutable or append-only file: its ID stays, the walk goes on.
+				err = nil
+			} else if err == nil && mode == syscall.S_IFDIR {
 				err = w.dir(c, h)
 			}
 			c.Close()

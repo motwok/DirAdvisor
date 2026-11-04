@@ -89,6 +89,13 @@ func TestLinuxStatListDirs(t *testing.T) {
 	if ok, _ := l.Stat("/missing"); ok {
 		t.Fatal("stat missing")
 	}
+	if ok, _ := l.Stat("/a/f/x"); ok {
+		t.Fatal("stat below a file")
+	}
+	// Any other error is not "gone" (ENAMETOOLONG here).
+	if ok, dir := l.Stat("/" + strings.Repeat("x", 300)); !ok || !dir {
+		t.Fatal("stat error")
+	}
 	ds, err := l.ListDirs("/")
 	if err != nil || len(ds) != 2 {
 		t.Fatalf("list: %v %v", ds, err)
@@ -426,9 +433,10 @@ func TestLinuxWalkErrors(t *testing.T) {
 		t.Fatalf("dir set: %v", err)
 	}
 	delete(fx.fail, filepath.Join(root, "d"))
+	// An immutable file is skipped, the walk goes on.
 	fx.fail[filepath.Join(root, "d/f")] = syscall.EPERM
-	if err := l.Walk(ctx, root, 1, true, nil, 0); !errors.Is(err, syscall.EPERM) {
-		t.Fatalf("file set: %v", err)
+	if err := l.Walk(ctx, root, 7, true, nil, 0); err != nil || fx.attrs[filepath.Join(root, "d")].Projid != 7 {
+		t.Fatalf("file set: %v %+v", err, fx.attrs)
 	}
 	delete(fx.fail, filepath.Join(root, "d/f"))
 
