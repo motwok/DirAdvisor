@@ -464,7 +464,7 @@ func TestParsers(t *testing.T) {
 	}
 	c.root = t.TempDir()
 	write(t, filepath.Join(c.root, "proc", "43", "cgroup"), "1:name=systemd:/docker/x\n")
-	if c.cgroupOf(43) != "" {
+	if c.cgroupOf(43) != "" || !c.owns(43, "x") || c.owns(43, "q") {
 		t.Fatal("cgroup v1 line")
 	}
 }

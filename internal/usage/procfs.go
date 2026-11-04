@@ -58,9 +58,11 @@ func (c *Core) cgroupOf(pid int) string {
 	return ""
 }
 
-// owns reports whether pid still belongs to the container: its cgroup is the container's.
+// owns reports whether pid still belongs to the container: a cgroup line
+// (v2 "0::" or any v1 controller) names it.
 func (c *Core) owns(pid int, id string) bool {
-	return strings.Contains(c.cgroupOf(pid), id)
+	b, err := os.ReadFile(c.procFile(pid, "cgroup"))
+	return err == nil && strings.Contains(string(b), id)
 }
 
 // ownBase finds the host path of the own cgroup namespace root once: the
