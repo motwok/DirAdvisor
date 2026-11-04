@@ -8,8 +8,10 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -339,6 +341,21 @@ func TestLinuxRun(t *testing.T) {
 	// An empty chroot has no binary, so this fails as root and as user.
 	if _, err := New(t.TempDir()).(*Linux).run(context.Background(), "/bin/true"); err == nil {
 		t.Fatal("chroot")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if _, err := l.run(ctx, "sleep", "10"); err == nil || !strings.Contains(err.Error(), "killed") {
+		t.Fatalf("timeout: %v", err)
+	}
+	// A child that never exits (uninterruptible sleep) is abandoned after the grace.
+	sw, sg := waitCmd, killGrace
+	defer func() { waitCmd, killGrace = sw, sg }()
+	killGrace = 10 * time.Millisecond
+	waitCmd = func(c *exec.Cmd) error { sw(c); select {} }
+	ctx, cancel = context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if _, err := l.run(ctx, "sleep", "10"); err == nil || !strings.Contains(err.Error(), "does not exit") {
+		t.Fatalf("abandoned: %v", err)
 	}
 }
 

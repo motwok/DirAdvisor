@@ -266,6 +266,14 @@ var zfsDirs = []string{"/usr/sbin", "/sbin", "/usr/bin", "/bin", "/usr/local/sbi
 // blocks them forever otherwise.
 const toolTimeout = 10 * time.Second
 
+// Replaceable in tests.
+var (
+	waitCmd = (*exec.Cmd).Wait
+	// killGrace: how long a killed tool gets to exit; one in uninterruptible
+	// sleep (suspended pool) never does and is abandoned.
+	killGrace = time.Second
+)
+
 // zfsBinary returns the path of a ZFS tool as seen from inside the chroot.
 func (l *Linux) zfsBinary(name string) string {
 	for _, d := range zfsDirs {
@@ -285,7 +293,22 @@ func (l *Linux) run(ctx context.Context, bin string, args ...string) (string, er
 	}
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
-	if err := cmd.Run(); err != nil {
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("%s %s: %v", bin, strings.Join(args, " "), err)
+	}
+	wait, w := make(chan error, 1), waitCmd
+	go func() { wait <- w(cmd) }()
+	var err error
+	select {
+	case err = <-wait:
+	case <-ctx.Done():
+		select {
+		case err = <-wait:
+		case <-time.After(killGrace):
+			return "", fmt.Errorf("%s %s: %v, process does not exit", bin, strings.Join(args, " "), ctx.Err())
+		}
+	}
+	if err != nil {
 		return "", fmt.Errorf("%s %s: %v: %s", bin, strings.Join(args, " "), err, strings.TrimSpace(errb.String()))
 	}
 	return out.String(), nil
