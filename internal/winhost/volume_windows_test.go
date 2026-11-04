@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -230,6 +231,42 @@ func TestVolumeEdges(t *testing.T) {
 	ioctl = windows.DeviceIoControl
 }
 
+// A root assigned during a rewalk stays; a root whose directory is gone is
+// dropped by the rewalk and by the journal.
+func TestRewalkRootsChange(t *testing.T) {
+	v, base := needVolume(t)
+	ctx := context.Background()
+	a, b, gone := filepath.Join(base, "a"), filepath.Join(base, "b"), filepath.Join(base, "gone")
+	for _, d := range []string{a, b, gone} {
+		write(t, filepath.Join(d, "f"), 1000)
+	}
+	if err := v.assign(ctx, a, 10); err != nil {
+		t.Fatal(err)
+	}
+	if err := v.assign(ctx, gone, 12); err != nil {
+		t.Fatal(err)
+	}
+	os.RemoveAll(gone)
+	saved := rewalkHook
+	defer func() { rewalkHook = saved }()
+	rewalkHook = func() {
+		rewalkHook = func() {}
+		if err := v.assign(ctx, b, 11); err != nil {
+			t.Error(err)
+		}
+	}
+	v.rewalk()
+	u := v.usage(1)
+	if u[10] != exact(t, a) || u[11] != exact(t, b) || len(v.roots) != 2 || u[12] != (Usage{}) {
+		t.Fatalf("usage %+v roots %v", u, v.roots)
+	}
+	os.RemoveAll(b)
+	settle(t, v)
+	if len(v.roots) != 1 || v.usage(1)[11] != (Usage{}) {
+		t.Fatalf("roots %v", v.roots)
+	}
+}
+
 func TestOpenVolumeErrors(t *testing.T) {
 	v, base := needVolume(t)
 	if _, err := openVolume(`Q:\`); err == nil {
@@ -242,6 +279,12 @@ func TestOpenVolumeErrors(t *testing.T) {
 	ioctl = windows.DeviceIoControl
 	if err == nil {
 		t.Fatal("no journal")
+	}
+	volMountName = func(*uint16, *uint16, uint32) error { return errors.New("x") }
+	_, err = openVolume(v.point)
+	volMountName = windows.GetVolumeNameForVolumeMountPoint
+	if err == nil {
+		t.Fatal("no volume name")
 	}
 	calls := 0
 	createFile = func(name *uint16, access, mode uint32, sa *windows.SecurityAttributes, disp, attrs uint32, tmpl windows.Handle) (windows.Handle, error) {
@@ -261,8 +304,43 @@ func TestOpenVolumeErrors(t *testing.T) {
 func TestNTFSHelpers(t *testing.T) {
 	base := t.TempDir()
 	write(t, filepath.Join(base, "f"), 10)
-	if utf16le([]byte{'a', 0, 'b', 0}) != "ab" || volumeDevice(`C:\`) != `\\.\C:` {
+	if utf16le([]byte{'a', 0, 'b', 0}) != "ab" || volKey(`C:\`) != "C:" || volKey("c:") != "C:" {
 		t.Fatal("helpers")
+	}
+	for in, want := range map[string]string{`C:\x\`: `\\?\C:\x`, `C:\`: `\\?\C:\`, `\\?\C:\x`: `\\?\C:\x`,
+		`\\.\C:`: `\\.\C:`, `\\srv\share\x`: `\\?\UNC\srv\share\x`} {
+		if got := extended(in); got != want {
+			t.Errorf("extended(%q) = %q", in, got)
+		}
+	}
+	if _, err := volumeName("a\x00b"); err == nil {
+		t.Fatal("NUL volume")
+	}
+	point, _, _ := volumeOf(base)
+	if dev, err := volumeName(point); err != nil || !strings.HasPrefix(dev, `\\?\Volume{`) || strings.HasSuffix(dev, `\`) {
+		t.Fatalf("volume name %q %v", dev, err)
+	}
+	volMountName = func(*uint16, *uint16, uint32) error { return errors.New("x") }
+	_, err := volumeName(point)
+	volMountName = windows.GetVolumeNameForVolumeMountPoint
+	if err == nil {
+		t.Fatal("volume name error")
+	}
+	// A name Win32 would normalize away is opened as it is.
+	dot := filepath.Join(base, "dot.")
+	if err := windows.CreateDirectory(windows.StringToUTF16Ptr(extended(dot)), nil); err != nil {
+		t.Fatal(err)
+	}
+	write(t, extended(filepath.Join(dot, "f")), 10)
+	if es, err := list(dot); err != nil || len(es) != 1 {
+		t.Fatalf("list dot %v %v", es, err)
+	}
+	nodes := map[uint64]*node{}
+	if err := walk(base, 1, nodes); err != nil || len(nodes) != 4 {
+		t.Fatalf("walk dot %d %v", len(nodes), err)
+	}
+	if err := walk(filepath.Join(base, "missing"), 2, nodes); err == nil || nodes[2] != nil {
+		t.Fatal("walk missing")
 	}
 	if _, err := fileID("a\x00b"); err == nil {
 		t.Fatal("NUL in path")
@@ -271,12 +349,12 @@ func TestNTFSHelpers(t *testing.T) {
 		t.Fatal("missing")
 	}
 	handleInfo = func(windows.Handle, *windows.ByHandleFileInformation) error { return errors.New("x") }
-	_, err := fileID(base)
+	_, err = fileID(base)
 	handleInfo = windows.GetFileInformationByHandle
 	if err == nil {
 		t.Fatal("handle info")
 	}
-	if es, err := list(base); err != nil || len(es) != 1 || es[0].name != "f" {
+	if es, err := list(base); err != nil || len(es) != 2 || es[0].name != "dot." || es[1].name != "f" {
 		t.Fatalf("list %v %v", es, err)
 	}
 	if _, err := list(filepath.Join(base, "missing")); err == nil {
