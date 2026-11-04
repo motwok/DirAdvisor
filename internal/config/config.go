@@ -63,7 +63,11 @@ type Config struct {
 	HostToken       string      `yaml:"host_token"`
 	Directories     []Directory `yaml:"directories"`
 	Images          Images      `yaml:"images"`
+	storageSet      bool
 }
+
+// StorageSet reports whether the config names storage_path itself.
+func (c *Config) StorageSet() bool { return c.storageSet }
 
 type Images struct {
 	CheckInterval Duration   `yaml:"check_interval"`
@@ -313,6 +317,11 @@ func Parse(data []byte, lookup LookupFunc, stat StatFunc) (*Config, error) {
 	if err := dec.Decode(cfg); err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
 	}
+	var given struct {
+		Storage *string `yaml:"storage_path"`
+	}
+	yaml.Unmarshal(data, &given)
+	cfg.storageSet = given.Storage != nil
 	if err := cfg.expand(lookup); err != nil {
 		return nil, err
 	}
@@ -372,6 +381,7 @@ func (c *Config) expand(lookup LookupFunc) error {
 		ex(where+".match.container", &r.Match.Container)
 		ex(where+".match.image", &r.Match.Image)
 		ex(where+".match.path", &r.Match.Path)
+		r.Match.Path = Host(r.Match.Path)
 		exMap(where, r.Labels)
 	}
 	for i := range c.Directories {
@@ -462,17 +472,6 @@ func (c *Config) validate(stat StatFunc) error {
 			return fmt.Errorf("docker_socket is empty, but %s need it; add them to disable", strings.Join(need, ", "))
 		}
 	}
-	if windows && c.HostSocket == "" {
-		var need []string
-		for _, f := range []string{FnDirectory, FnVolume} {
-			if c.Runs(f) {
-				need = append(need, f)
-			}
-		}
-		if len(need) > 0 {
-			return fmt.Errorf("host_socket is empty, but %s need it; add them to disable", strings.Join(need, ", "))
-		}
-	}
 	if strings.HasPrefix(c.HostSocket, "tcp://") && c.HostToken == "" {
 		return errors.New("host_socket over TCP needs host_token")
 	}
@@ -544,9 +543,6 @@ func (c *Config) validate(stat StatFunc) error {
 		}
 		p = path.Clean(p)
 		c.Directories[i].Path = p
-		if Drive(p) && c.HostSocket == "" {
-			return fmt.Errorf("%s: %s needs host_socket", where, Display(p))
-		}
 		glob := strings.Contains(p, "*")
 		if (!glob && Excluded(p, "")) || (glob && excludedTree(StaticPrefix(p), "")) {
 			return fmt.Errorf("%s: %s is excluded", where, p)
@@ -577,6 +573,31 @@ func (im Images) validate() error {
 }
 
 // CheckDirectories rejects configured directories that exist and are not directories.
+// CheckHostSocket fails when directories or volumes need the host service
+// and host_socket is empty; HatchLens as a Windows service has it built in.
+func (c *Config) CheckHostSocket() error {
+	if c.HostSocket != "" {
+		return nil
+	}
+	if windows {
+		var need []string
+		for _, f := range []string{FnDirectory, FnVolume} {
+			if c.Runs(f) {
+				need = append(need, f)
+			}
+		}
+		if len(need) > 0 {
+			return fmt.Errorf("host_socket is empty, but %s need it; add them to disable", strings.Join(need, ", "))
+		}
+	}
+	for i, d := range c.Directories {
+		if Drive(d.Path) {
+			return fmt.Errorf("directories[%d]: %s needs host_socket", i, Display(d.Path))
+		}
+	}
+	return nil
+}
+
 func (c *Config) CheckDirectories(stat StatFunc) error {
 	for i, d := range c.Directories {
 		if strings.Contains(d.Path, "*") {

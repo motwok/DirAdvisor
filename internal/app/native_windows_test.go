@@ -148,6 +148,14 @@ func TestNativeDefaults(t *testing.T) {
 	if cfg.Global.StoragePath != dir {
 		t.Fatal("native")
 	}
+	cfg, err := config.Parse([]byte(`storage_path: C:\data`), os.LookupEnv, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nativeStorage(cfg, true)
+	if cfg.Global.StoragePath != `C:\data` {
+		t.Fatal("explicit storage_path stays")
+	}
 	cfg.Global.StoragePath = `D:\state`
 	nativeStorage(cfg, true)
 	if cfg.Global.StoragePath != `D:\state` {

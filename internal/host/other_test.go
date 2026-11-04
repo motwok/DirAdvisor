@@ -6,6 +6,7 @@ package host
 
 import (
 	"context"
+	"os"
 	"testing"
 )
 
@@ -36,7 +37,7 @@ func TestStub(t *testing.T) {
 	if err := fs.Walk(ctx, "/", 1, false, nil, 0); err == nil {
 		t.Fatal("Walk")
 	}
-	if SelfContainerID() != "" {
+	if h, _ := os.Hostname(); SelfContainerID() != h {
 		t.Fatal("SelfContainerID")
 	}
 }
