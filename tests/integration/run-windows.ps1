@@ -106,6 +106,9 @@ Step 'install the host service'
 $p = Start-Process msiexec -ArgumentList '/i', "`"$Msi`"", '/qn', 'TCP=127.0.0.1:8091', '/l*v', "`"$(Join-Path $data 'msi-install.log')`"" -Wait -PassThru
 if ($p.ExitCode -ne 0) { Get-Content (Join-Path $data 'msi-install.log') -Tail 40 | Write-Host; Fail "msiexec /i: $($p.ExitCode)" }
 WaitFor 30 'service running' { (Get-Service HatchLensHost).Status -eq 'Running' }
+$acl = Get-Acl (Join-Path $env:ProgramData 'HatchLens')
+$sids = $acl.Access | ForEach-Object { $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value }
+if ($sids -match '^S-1-(1-0|3-0|5-32-545)$') { Fail "ProgramData\HatchLens open to users: $sids" }
 
 Step 'host service over TCP with the token'
 $tokenFile = Join-Path $env:ProgramData 'HatchLens\host-token'

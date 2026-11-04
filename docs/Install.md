@@ -247,6 +247,8 @@ msiexec /i hatchlens-X.Y.Z.msi /qn
 - `/metrics` on port 8080 of the host (`listen_address`); open it in the Windows firewall for the
   Prometheus server, e.g. `New-NetFirewallRule -DisplayName HatchLens -Direction Inbound -Protocol TCP
   -LocalPort 8080 -Action Allow`.
+- `%ProgramData%\HatchLens` is created by the MSI for administrators and SYSTEM only; the service refuses
+  a directory or `config.yml` owned by anyone else.
 - Updating: install the newer MSI; removing: `msiexec /x hatchlens-X.Y.Z.msi /qn` (config and state in
   `%ProgramData%\HatchLens` stay).
 
@@ -286,7 +288,8 @@ container usage and traffic per Docker network work as on Linux. The differences
   msiexec /i hatchlens-host-X.Y.Z.msi /qn TCP=127.0.0.1:8091
   ```
 
-  The service creates `%ProgramData%\HatchLens\host-token` (readable by administrators only) and
+  The service creates `%ProgramData%\HatchLens\host-token` (readable by administrators only, refused
+  when owned by anyone else) and
   accepts TCP requests only with that token. Pass it to the container, for example as an environment
   variable, and add to the config:
 

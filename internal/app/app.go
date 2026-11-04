@@ -157,6 +157,10 @@ func serve(ctx context.Context, stop context.CancelFunc, args []string, stderr i
 		fmt.Fprintln(stderr, err)
 		return 2
 	}
+	if err := dataOwner(native); err != nil {
+		NewLogger("info", "logfmt", stderr).Error("data dir not trusted", "err", err)
+		return 1
+	}
 	data, src, err := config.Source(path, configEnv(native))
 	var cfg *config.Config
 	if err == nil {

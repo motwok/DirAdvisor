@@ -27,6 +27,7 @@ var (
 	startHost  = winhost.Start
 	dataDir    = winhost.DataDir
 	openLog    = winhost.OpenLog
+	checkOwner = winhost.CheckOwner
 )
 
 // asService runs HatchLens under the service control manager when it was
@@ -93,6 +94,20 @@ func configEnv(native bool) func(string) string {
 		}
 		return v
 	}
+}
+
+// dataOwner: as a service, DataDir and a config.yml in it must come from
+// SYSTEM or an administrator, else any user could configure the service.
+func dataOwner(native bool) error {
+	if !native {
+		return nil
+	}
+	for _, p := range []string{dataDir(), filepath.Join(dataDir(), "config.yml")} {
+		if err := checkOwner(p); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // nativeStorage: as a service the default state directory is DataDir.
