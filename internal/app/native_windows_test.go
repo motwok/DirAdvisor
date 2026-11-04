@@ -23,7 +23,7 @@ type nullBackend struct{ winhost.Backend }
 func restoreNative(t *testing.T) {
 	t.Cleanup(func() {
 		isService, runService, startHost, dataDir, openLog = svc.IsWindowsService, svc.Run, winhost.Start, winhost.DataDir, winhost.OpenLog
-		checkOwner = winhost.CheckOwner
+		checkOwner, serveFn = winhost.CheckOwner, serve
 	})
 }
 
@@ -89,6 +89,24 @@ func TestServiceExecute(t *testing.T) {
 		if s := <-st; s.State == svc.Running {
 			t.Fatal("running without a listener")
 		}
+	}
+	// A service dying after the start ends with its exit code.
+	gate := make(chan struct{})
+	serveFn = func(_ context.Context, _ context.CancelFunc, _ []string, _ io.Writer, _ bool, ready func()) int {
+		ready()
+		<-gate
+		return 1
+	}
+	st = make(chan svc.Status, 10)
+	go func() {
+		_, code := handler{w: io.Discard}.Execute(nil, make(chan svc.ChangeRequest), st)
+		res <- uint32(code)
+	}()
+	for s := <-st; s.State != svc.Running; s = <-st {
+	}
+	close(gate)
+	if code := <-res; code != 1 {
+		t.Fatalf("died: %d", code)
 	}
 }
 

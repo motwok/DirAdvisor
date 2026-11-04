@@ -28,6 +28,7 @@ var (
 	dataDir    = winhost.DataDir
 	openLog    = winhost.OpenLog
 	checkOwner = winhost.CheckOwner
+	serveFn    = serve
 )
 
 // asService runs HatchLens under the service control manager when it was
@@ -58,7 +59,7 @@ func (h handler) Execute(_ []string, req <-chan svc.ChangeRequest, st chan<- svc
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done, ready := make(chan int, 1), make(chan struct{}, 1)
-	go func() { done <- serve(ctx, cancel, h.args, h.w, true, func() { ready <- struct{}{} }) }()
+	go func() { done <- serveFn(ctx, cancel, h.args, h.w, true, func() { ready <- struct{}{} }) }()
 	// Running only with the listener up, so a failed start is one for the
 	// service control manager and the installer too.
 	select {

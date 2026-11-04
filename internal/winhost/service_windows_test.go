@@ -141,6 +141,14 @@ func tcpListen(t *testing.T) func(string) (net.Listener, error) {
 
 type badListener struct{}
 
+// gatedListener fails once release is closed.
+type gatedListener struct {
+	badListener
+	release chan struct{}
+}
+
+func (l gatedListener) Accept() (net.Conn, error) { <-l.release; return nil, errors.New("gone") }
+
 func (badListener) Accept() (net.Conn, error) { return nil, errors.New("accept failed") }
 func (badListener) Close() error              { return nil }
 func (badListener) Addr() net.Addr            { return &net.TCPAddr{} }
@@ -197,6 +205,17 @@ func TestExecute(t *testing.T) {
 		if s := <-st; s.State == svc.Running {
 			t.Fatal("running without a listener")
 		}
+	}
+	// A service dying after the start ends with an error.
+	release := make(chan struct{})
+	listen = func(string) (net.Listener, error) { return gatedListener{release: release}, nil }
+	st = make(chan svc.Status, 10)
+	go func() { _, code := service{log: quiet()}.Execute(nil, make(chan svc.ChangeRequest), st); res <- code }()
+	for s := <-st; s.State != svc.Running; s = <-st {
+	}
+	close(release)
+	if code := <-res; code != 1 {
+		t.Fatalf("died: %d", code)
 	}
 }
 
