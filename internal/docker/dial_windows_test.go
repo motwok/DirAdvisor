@@ -7,9 +7,13 @@ package docker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
+	"runtime"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/windows"
 )
 
 // The Docker engine pipe exists on the Windows CI runners and with Docker Desktop.
@@ -77,5 +81,55 @@ func TestPipeErrors(t *testing.T) {
 	cancel()
 	if _, err := dialer("x")(cctx, "", ""); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled: %v", err)
+	}
+}
+
+// A server must not get the client's identity: the dialer asks for anonymous
+// SQOS, so the impersonation token is anonymous and cannot even be opened.
+func TestPipeAnonymous(t *testing.T) {
+	name := fmt.Sprintf(`\\.\pipe\hatchlens-test-%d`, os.Getpid())
+	p, _ := windows.UTF16PtrFromString(name)
+	h, err := windows.CreateNamedPipe(p, windows.PIPE_ACCESS_DUPLEX, windows.PIPE_TYPE_BYTE|windows.PIPE_WAIT, 1, 4096, 4096, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer windows.CloseHandle(h)
+	impersonate := windows.NewLazySystemDLL("advapi32.dll").NewProc("ImpersonateNamedPipeClient")
+	result := make(chan error, 1)
+	go func() {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+		if err := windows.ConnectNamedPipe(h, nil); err != nil && err != windows.ERROR_PIPE_CONNECTED {
+			result <- err
+			return
+		}
+		// Impersonation is only possible after a read from the pipe.
+		var n uint32
+		if err := windows.ReadFile(h, make([]byte, 1), &n, nil); err != nil {
+			result <- err
+			return
+		}
+		if r, _, err := impersonate.Call(uintptr(h)); r == 0 {
+			result <- err
+			return
+		}
+		defer windows.RevertToSelf()
+		var tok windows.Token
+		err := windows.OpenThreadToken(windows.CurrentThread(), windows.TOKEN_QUERY, true, &tok)
+		if err == nil {
+			tok.Close()
+		}
+		result <- err
+	}()
+	conn, err := dialer(name)(context.Background(), "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := conn.Write([]byte("x")); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-result; !errors.Is(err, windows.ERROR_CANT_OPEN_ANONYMOUS) {
+		t.Fatalf("impersonation: %v", err)
 	}
 }

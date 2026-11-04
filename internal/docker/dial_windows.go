@@ -11,6 +11,8 @@ import (
 	"os"
 	"syscall"
 	"time"
+
+	"golang.org/x/sys/windows"
 )
 
 // DefaultSocket is the default of docker.socket.
@@ -19,14 +21,15 @@ const DefaultSocket = `\\.\pipe\docker_engine`
 const errorPipeBusy = syscall.Errno(231)
 
 // openPipe opens the pipe for overlapped I/O, so os.NewFile puts it on the runtime's
-// completion port and concurrent reads and writes do not block each other.
+// completion port and concurrent reads and writes do not block each other. Anonymous
+// SQOS keeps a rogue server from impersonating this process.
 var openPipe = func(name string) (*os.File, error) {
 	p, err := syscall.UTF16PtrFromString(name)
 	if err != nil {
 		return nil, err
 	}
 	h, err := syscall.CreateFile(p, syscall.GENERIC_READ|syscall.GENERIC_WRITE, 0, nil,
-		syscall.OPEN_EXISTING, syscall.FILE_FLAG_OVERLAPPED, 0)
+		syscall.OPEN_EXISTING, syscall.FILE_FLAG_OVERLAPPED|windows.SECURITY_SQOS_PRESENT|windows.SECURITY_ANONYMOUS, 0)
 	if err != nil {
 		return nil, err
 	}
