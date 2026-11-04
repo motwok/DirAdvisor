@@ -36,8 +36,15 @@ type volume struct {
 	open    map[uint64]bool // files with a change not closed yet
 }
 
+// Replaceable in tests.
+var rewalkHook = func() {}
+
 func openVolume(point string) (*volume, error) {
-	h, err := open(volumeDevice(point), windows.GENERIC_READ, 0)
+	dev, err := volumeName(point)
+	if err != nil {
+		return nil, err
+	}
+	h, err := open(dev, windows.GENERIC_READ, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -58,12 +65,12 @@ func openVolume(point string) (*volume, error) {
 // walk adds the tree below dir to nodes. Reparse points are not entered;
 // unreadable subdirectories count as empty.
 func walk(dir string, frn uint64, nodes map[uint64]*node) error {
-	if nodes[frn] == nil {
-		nodes[frn] = &node{dir: true}
-	}
 	es, err := list(dir)
 	if err != nil {
 		return err
+	}
+	if nodes[frn] == nil {
+		nodes[frn] = &node{dir: true}
 	}
 	for _, e := range es {
 		nd := &node{parent: frn, dir: e.attrs&attrDirectory != 0}
@@ -126,21 +133,34 @@ func (v *volume) assign(ctx context.Context, path string, id uint32) error {
 
 // rewalk rebuilds the nodes of all roots, after a lost journal and once an
 // hour against drift (a file open since before the service started changes
-// without new journal records).
+// without new journal records). Roots assigned meanwhile are walked too; a
+// root whose directory is gone is dropped.
 func (v *volume) rewalk() {
-	v.mu.Lock()
-	roots := make(map[uint64]root, len(v.roots))
-	for k, r := range v.roots {
-		roots[k] = r
+	nodes, seen := map[uint64]*node{}, map[uint64]bool{}
+	for {
+		v.mu.Lock()
+		todo := map[uint64]root{}
+		for frn, r := range v.roots {
+			if !seen[frn] {
+				todo[frn] = r
+			}
+		}
+		if len(todo) == 0 {
+			v.nodes, v.open = nodes, map[uint64]bool{}
+			v.mu.Unlock()
+			return
+		}
+		v.mu.Unlock()
+		rewalkHook()
+		for frn, r := range todo {
+			seen[frn] = true
+			if err := walk(r.path, frn, nodes); errors.Is(notExist(err), fs.ErrNotExist) {
+				v.mu.Lock()
+				delete(v.roots, frn)
+				v.mu.Unlock()
+			}
+		}
 	}
-	v.mu.Unlock()
-	nodes := map[uint64]*node{}
-	for frn, r := range roots {
-		walk(r.path, frn, nodes)
-	}
-	v.mu.Lock()
-	v.nodes, v.open = nodes, map[uint64]bool{}
-	v.mu.Unlock()
 }
 
 // poll applies the journal since the last call and re-measures every file it
@@ -164,6 +184,7 @@ func (v *volume) poll() error {
 		if r.reason&reasonFileDelete != 0 {
 			delete(v.nodes, r.frn)
 			delete(v.open, r.frn)
+			delete(v.roots, r.frn)
 			continue
 		}
 		nd, parentKnown := v.nodes[r.frn], v.nodes[r.parent] != nil

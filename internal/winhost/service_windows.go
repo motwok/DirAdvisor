@@ -68,7 +68,7 @@ func (h *host) volume(path string) (*volume, error) {
 	if fstype != "NTFS" {
 		return nil, errf("%s is %s, not NTFS", point, fstype)
 	}
-	key := strings.ToUpper(point)
+	key := volKey(point)
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if v := h.vols[key]; v != nil {
@@ -81,6 +81,10 @@ func (h *host) volume(path string) (*volume, error) {
 	h.vols[key] = v
 	return v, nil
 }
+
+// volKey: one volume per mount point, `C:\` and `C:` alike (HatchLens
+// sends the point without the trailing backslash).
+func volKey(point string) string { return strings.ToUpper(strings.TrimSuffix(point, `\`)) }
 
 func (h *host) Endpoints() ([]Endpoint, error) { return hnsEndpoints() }
 
@@ -143,7 +147,7 @@ func (h *host) Assign(ctx context.Context, path string, id uint32) error {
 
 func (h *host) Usage(volume string, min uint32) (map[uint32]Usage, error) {
 	h.mu.Lock()
-	v := h.vols[strings.ToUpper(volume)]
+	v := h.vols[volKey(volume)]
 	h.mu.Unlock()
 	if v == nil {
 		return map[uint32]Usage{}, nil

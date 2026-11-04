@@ -17,6 +17,28 @@ $data = Join-Path (Split-Path $Cover) 'hl-data'
 New-Item -ItemType Directory -Force $data | Out-Null
 $dir = 'C:\hl-dir'
 New-Item -ItemType Directory -Force $dir | Out-Null
+# A volume mounted at a folder, and a directory name Win32 normalizes away.
+$mount = 'C:\hl-mount'
+New-Item -ItemType Directory -Force $mount | Out-Null
+@"
+create vdisk file="$data\hl-mount.vhdx" maximum=64 type=expandable
+attach vdisk
+create partition primary
+format fs=ntfs quick
+assign mount="$mount"
+"@ | Set-Content -Encoding ascii (Join-Path $data 'diskpart.txt')
+diskpart /s (Join-Path $data 'diskpart.txt') | Out-Null
+if ($LASTEXITCODE -ne 0) { Fail 'diskpart' }
+fsutil usn createjournal m=1000000 a=100000 $mount | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    fsutil usn createjournal m=1000000 a=100000 (Get-Volume -FilePath $mount).UniqueId | Out-Null
+    if ($LASTEXITCODE -ne 0) { Fail 'usn journal' }
+}
+New-Item -ItemType Directory -Force (Join-Path $mount 'data') | Out-Null
+[IO.File]::WriteAllBytes((Join-Path $mount 'data\a'), (New-Object byte[] 250000))
+Add-Type -Namespace HL -Name Kernel -MemberDefinition '[DllImport("kernel32.dll", SetLastError=true, CharSet=CharSet.Unicode)] public static extern bool CreateDirectoryW(string n, IntPtr sa);'
+if (-not [HL.Kernel]::CreateDirectoryW("\\?\$dir\dot.", [IntPtr]::Zero)) { Fail 'dot directory' }
+[IO.File]::WriteAllBytes("\\?\$dir\dot.\b", (New-Object byte[] 400000))
 $script:url = $null
 $nano = "mcr.microsoft.com/windows/nanoserver:$Ltsc"
 
@@ -74,6 +96,7 @@ exclude:
   containers: ["hatchlens"]
 directories:
   - path: '$dir'
+  - path: '$mount\data'
 "@ | Set-Content -Encoding ascii (Join-Path $data 'config.yml')
 [IO.File]::WriteAllBytes((Join-Path $dir 'a'), (New-Object byte[] 200000))
 Invoke-Docker volume create vol1 | Out-Null
@@ -122,7 +145,8 @@ if ($v.StatusCode -ne 200) { Fail "TCP with token: $($v.StatusCode)" }
 Step 'start with the host service'
 Start-HatchLens @('-v', '\\.\pipe\hatchlens-host:\\.\pipe\hatchlens-host')
 WaitFor 120 'volume measured' { (Value 'hatchlens_directory_bytes\{.*source="volume".*volume="vol1"') -gt 0 }
-WaitFor 60 'directory measured' { (Value 'hatchlens_directory_bytes\{path="C:\\\\hl-dir",source="config"') -gt 0 }
+WaitFor 60 'directory measured' { (Value 'hatchlens_directory_bytes\{path="C:\\\\hl-dir",source="config"') -ge 600000 }
+WaitFor 60 'mounted volume measured' { (Value 'hatchlens_directory_bytes\{path="C:\\\\hl-mount\\\\data",source="config"') -ge 250000 }
 if ((Metrics) -match 'install_host_service') { Fail 'admin action with the host service' }
 $before = Value 'hatchlens_directory_bytes\{.*source="volume".*volume="vol1"'
 [IO.File]::WriteAllBytes((Join-Path $volDir 'b'), (New-Object byte[] 5000000))

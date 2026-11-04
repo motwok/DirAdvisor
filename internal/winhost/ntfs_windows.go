@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"unicode/utf16"
 	"unsafe"
@@ -42,6 +43,7 @@ var (
 	dirInfo       = windows.GetFileInformationByHandleEx
 	handleInfo    = windows.GetFileInformationByHandle
 	volPathName   = windows.GetVolumePathName
+	volMountName  = windows.GetVolumeNameForVolumeMountPoint
 	volInfo       = windows.GetVolumeInformation
 	finalPathName = windows.GetFinalPathNameByHandle
 	processToken  = windows.OpenProcessToken
@@ -60,8 +62,20 @@ func utf16le(b []byte) string {
 	return string(utf16.Decode(u))
 }
 
+// extended prefixes a path with \\?\, so names Win32 would normalize away
+// (trailing dots and spaces) and long paths open as they are.
+func extended(path string) string {
+	switch {
+	case strings.HasPrefix(path, `\\?\`) || strings.HasPrefix(path, `\\.\`):
+		return path
+	case strings.HasPrefix(path, `\\`):
+		return `\\?\UNC\` + path[2:]
+	}
+	return `\\?\` + filepath.Clean(path)
+}
+
 func open(path string, access uint32, flags uint32) (windows.Handle, error) {
-	p, err := windows.UTF16PtrFromString(path)
+	p, err := windows.UTF16PtrFromString(extended(path))
 	if err != nil {
 		return windows.InvalidHandle, err
 	}
@@ -231,9 +245,18 @@ func enableBackup() error {
 	return windows.AdjustTokenPrivileges(tok, false, &tp, 0, nil, nil)
 }
 
-// volumeDevice turns "C:\" into `\\.\C:`.
-func volumeDevice(root string) string {
-	return `\\.\` + strings.TrimSuffix(root, `\`)
+// volumeName returns the `\\?\Volume{GUID}` device of a mount point, a drive
+// root or a folder a volume is mounted at, to open for the USN journal.
+func volumeName(root string) (string, error) {
+	p, err := windows.UTF16PtrFromString(root)
+	if err != nil {
+		return "", err
+	}
+	buf := make([]uint16, 64)
+	if err := volMountName(p, &buf[0], uint32(len(buf))); err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(windows.UTF16ToString(buf), `\`), nil
 }
 
 func errf(format string, a ...any) error { return fmt.Errorf(format, a...) }
