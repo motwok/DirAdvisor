@@ -1,6 +1,6 @@
 # Metrics
 
-All metrics have the prefix `hatchlens_`; all are gauges except `reconcile_errors_total`.
+All metrics have the prefix `hatchlens_`; all are gauges except the `_total` counters (`reconcile_errors_total` and the container counters).
 
 ## Directories
 
