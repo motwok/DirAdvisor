@@ -50,7 +50,12 @@ func (c *Core) readUsage(ctx context.Context, groups map[string]*usageGroup) map
 	}
 	if wait := c.usage.done; wait != nil {
 		c.usage.mu.Unlock()
-		<-wait
+		// A read hung in a ZFS tool must not hold every scrape (WEB-6).
+		select {
+		case <-wait:
+		case <-ctx.Done():
+			return nil
+		}
 		c.usage.mu.Lock()
 		if d, ok := fresh(); ok {
 			c.usage.mu.Unlock()

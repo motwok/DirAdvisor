@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/motwok/HatchLens/internal/config"
+	"github.com/motwok/HatchLens/internal/metrics"
 )
 
 // Scrapes within usageTTL share one quota read; parallel scrapes wait for the
@@ -58,6 +59,29 @@ func TestUsageCacheAndSingleflight(t *testing.T) {
 	wg.Wait()
 	if e.fs.usageCalls != before+2 {
 		t.Fatalf("parallel scrapes: %d calls", e.fs.usageCalls-before)
+	}
+	// A waiter whose context ends while the read hangs gives up without usage.
+	e.now = e.now.Add(usageTTL)
+	started, release = make(chan struct{}), make(chan struct{})
+	once = sync.Once{}
+	go e.c.Collect(context.Background())
+	<-started
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	bytesSamples := func(fams []metrics.Family) int {
+		for _, f := range fams {
+			if f.Name == "hatchlens_directory_bytes" {
+				return len(f.Samples)
+			}
+		}
+		return 0
+	}
+	if n := bytesSamples(e.c.Collect(ctx)); n != 0 {
+		t.Fatalf("usage from a cancelled wait: %d samples", n)
+	}
+	close(release)
+	if n := bytesSamples(e.c.Collect(context.Background())); n == 0 {
+		t.Fatal("usage after the read")
 	}
 }
 
