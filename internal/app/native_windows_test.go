@@ -81,8 +81,14 @@ func TestServiceExecute(t *testing.T) {
 	if code := <-res; code != 0 {
 		t.Fatalf("stop: %d", code)
 	}
-	if _, code := (handler{args: []string{"--bogus"}, w: io.Discard}).Execute(nil, make(chan svc.ChangeRequest), make(chan svc.Status, 10)); code != 2 {
+	st = make(chan svc.Status, 10)
+	if _, code := (handler{args: []string{"--bogus"}, w: io.Discard}).Execute(nil, make(chan svc.ChangeRequest), st); code != 2 {
 		t.Fatalf("bad flag: %d", code)
+	}
+	for len(st) > 0 {
+		if s := <-st; s.State == svc.Running {
+			t.Fatal("running without a listener")
+		}
 	}
 }
 
@@ -111,7 +117,7 @@ func TestNativeDefaults(t *testing.T) {
 	if dataOwner(false) != nil || dataOwner(true) == nil {
 		t.Fatal("owner check")
 	}
-	if serve(context.Background(), func() {}, nil, io.Discard, true) != 1 {
+	if serve(context.Background(), func() {}, nil, io.Discard, true, nil) != 1 {
 		t.Fatal("untrusted data dir")
 	}
 	checkOwner = winhost.CheckOwner

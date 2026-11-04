@@ -200,8 +200,8 @@ func Start(ctx context.Context, log *slog.Logger) Backend {
 }
 
 // serve listens on the pipe and, with tcp set, on that loopback address with
-// the token.
-func serve(ctx context.Context, log *slog.Logger, tcp string) error {
+// the token; ready, if set, is called once the listeners are up.
+func serve(ctx context.Context, log *slog.Logger, tcp string, ready func()) error {
 	var tl net.Listener
 	tok := ""
 	if tcp != "" {
@@ -235,6 +235,9 @@ func serve(ctx context.Context, log *slog.Logger, tcp string) error {
 		log.Info("listening", "tcp", tcp)
 	}
 	log.Info("listening", "pipe", Pipe, "version", Version)
+	if ready != nil {
+		ready()
+	}
 	if err := srv.Serve(l); !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
@@ -250,8 +253,16 @@ func (s service) Execute(_ []string, req <-chan svc.ChangeRequest, st chan<- svc
 	st <- svc.Status{State: svc.StartPending}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	done := make(chan error, 1)
-	go func() { done <- serve(ctx, s.log, s.tcp) }()
+	done, ready := make(chan error, 1), make(chan struct{}, 1)
+	go func() { done <- serve(ctx, s.log, s.tcp, func() { ready <- struct{}{} }) }()
+	// Running only with the listeners up, so a failed start is one for the
+	// service control manager and the installer too.
+	select {
+	case <-ready:
+	case err := <-done:
+		s.log.Error("not started", "err", err)
+		return false, 1
+	}
 	st <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown}
 	for {
 		select {
@@ -345,7 +356,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 	log := slog.New(slog.NewTextHandler(stderr, nil))
 	ctx, stop := notify(context.Background(), os.Interrupt)
 	defer stop()
-	if err := serve(ctx, log, *tcp); err != nil {
+	if err := serve(ctx, log, *tcp, nil); err != nil {
 		log.Error("serve failed", "err", err)
 		return 1
 	}

@@ -14,7 +14,13 @@
           <File Id="Exe" Source="$(Exe)" Name="hatchlens.exe" KeyPath="yes" />
           <ServiceInstall Id="ServiceInstall" Name="HatchLens" DisplayName="HatchLens"
                           Description="Prometheus exporter: Docker volume and directory sizes, image updates, container usage."
-                          Type="ownProcess" Start="auto" Account="LocalSystem" ErrorControl="normal" Vital="yes" />
+                          Type="ownProcess" Start="auto" Account="LocalSystem" ErrorControl="normal" Vital="yes">
+            <ServiceConfigFailureActions OnInstall="yes" OnReinstall="yes" ResetPeriod="86400">
+              <Failure Action="restartService" Delay="60000" />
+              <Failure Action="restartService" Delay="60000" />
+              <Failure Action="restartService" Delay="60000" />
+            </ServiceConfigFailureActions>
+          </ServiceInstall>
           <ServiceControl Id="ServiceControl" Name="HatchLens" Start="install" Stop="both"
                           Remove="uninstall" Wait="yes" />
         </Component>

@@ -151,19 +151,19 @@ func TestServe(t *testing.T) {
 	listen = tcpListen(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error)
-	go func() { done <- serve(ctx, quiet(), "") }()
+	go func() { done <- serve(ctx, quiet(), "", nil) }()
 	time.Sleep(50 * time.Millisecond)
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
 	listen = func(string) (net.Listener, error) { return nil, errors.New("pipe in use") }
-	if serve(context.Background(), quiet(), "") == nil {
+	if serve(context.Background(), quiet(), "", nil) == nil {
 		t.Fatal("listen error")
 	}
 	listen = func(string) (net.Listener, error) { return badListener{}, nil }
 	processToken = func(windows.Handle, uint32, *windows.Token) error { return errors.New("x") }
-	err := serve(context.Background(), quiet(), "")
+	err := serve(context.Background(), quiet(), "", nil)
 	processToken = windows.OpenProcessToken
 	if err == nil {
 		t.Fatal("accept error")
@@ -189,8 +189,14 @@ func TestExecute(t *testing.T) {
 		t.Fatalf("stop: %d", code)
 	}
 	listen = func(string) (net.Listener, error) { return nil, errors.New("pipe in use") }
-	if _, code := (service{log: quiet()}).Execute(nil, make(chan svc.ChangeRequest), make(chan svc.Status, 10)); code != 1 {
+	st = make(chan svc.Status, 10)
+	if _, code := (service{log: quiet()}).Execute(nil, make(chan svc.ChangeRequest), st); code != 1 {
 		t.Fatalf("failed: %d", code)
+	}
+	for len(st) > 0 {
+		if s := <-st; s.State == svc.Running {
+			t.Fatal("running without a listener")
+		}
 	}
 }
 

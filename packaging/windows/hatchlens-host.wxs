@@ -18,7 +18,13 @@
           <ServiceInstall Id="HostServiceInstall" Name="HatchLensHost" DisplayName="HatchLens Host"
                           Description="Tells the HatchLens container the HNS networks and directory sizes."
                           Type="ownProcess" Start="auto" Account="LocalSystem" ErrorControl="normal" Vital="yes"
-                          Arguments="[TCPARG]" />
+                          Arguments="[TCPARG]">
+            <ServiceConfigFailureActions OnInstall="yes" OnReinstall="yes" ResetPeriod="86400">
+              <Failure Action="restartService" Delay="60000" />
+              <Failure Action="restartService" Delay="60000" />
+              <Failure Action="restartService" Delay="60000" />
+            </ServiceConfigFailureActions>
+          </ServiceInstall>
           <ServiceControl Id="HostServiceControl" Name="HatchLensHost" Start="install" Stop="both"
                           Remove="uninstall" Wait="yes" />
         </Component>

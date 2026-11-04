@@ -92,7 +92,7 @@ func TestServeTCP(t *testing.T) {
 	addr := freePort(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error)
-	go func() { done <- serve(ctx, quiet(), addr) }()
+	go func() { done <- serve(ctx, quiet(), addr, nil) }()
 	tok := ""
 	var code int
 	for i := 0; i < 50; i++ {
@@ -111,16 +111,16 @@ func TestServeTCP(t *testing.T) {
 		t.Fatalf("%v %d", err, code)
 	}
 
-	if serve(context.Background(), quiet(), "10.0.0.1:1") == nil {
+	if serve(context.Background(), quiet(), "10.0.0.1:1", nil) == nil {
 		t.Fatal("not loopback")
 	}
 	busy, _ := net.Listen("tcp", "127.0.0.1:0")
 	defer busy.Close()
-	if serve(context.Background(), quiet(), busy.Addr().String()) == nil {
+	if serve(context.Background(), quiet(), busy.Addr().String(), nil) == nil {
 		t.Fatal("port in use")
 	}
 	listen = func(string) (net.Listener, error) { return nil, errors.New("pipe in use") }
-	if serve(context.Background(), quiet(), freePort(t)) == nil {
+	if serve(context.Background(), quiet(), freePort(t), nil) == nil {
 		t.Fatal("pipe error")
 	}
 }

@@ -175,6 +175,15 @@ reconcile_interval: 5s
 directories:
   - path: '$dir'
 "@ | Set-Content -Encoding ascii (Join-Path $pd 'config.yml')
+# A service that cannot listen fails to start, and so does the installer.
+$busy = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Any, 8080)
+$busy.Start()
+$p = Start-Process msiexec -ArgumentList '/i', "`"$FullMsi`"", '/qn', '/l*v', "`"$(Join-Path $data 'msi-busy.log')`"" -Wait -PassThru
+$busy.Stop()
+if ($p.ExitCode -eq 0 -or -not ((Get-Content (Join-Path $data 'msi-busy.log')) -match 'Error 1920')) {
+    Get-Content (Join-Path $data 'msi-busy.log') -Tail 40 | Write-Host; Fail "msiexec /i with port busy: $($p.ExitCode)"
+}
+if (Get-Service HatchLens -ErrorAction SilentlyContinue) { Fail 'service installed with the port busy' }
 $p = Start-Process msiexec -ArgumentList '/i', "`"$FullMsi`"", '/qn', '/l*v', "`"$(Join-Path $data 'msi-full.log')`"" -Wait -PassThru
 if ($p.ExitCode -ne 0) { Get-Content (Join-Path $data 'msi-full.log') -Tail 40 | Write-Host; Fail "msiexec /i full: $($p.ExitCode)" }
 WaitFor 30 'HatchLens service running' { (Get-Service HatchLens).Status -eq 'Running' }

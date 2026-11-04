@@ -57,8 +57,15 @@ func (h handler) Execute(_ []string, req <-chan svc.ChangeRequest, st chan<- svc
 	st <- svc.Status{State: svc.StartPending}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	done := make(chan int, 1)
-	go func() { done <- serve(ctx, cancel, h.args, h.w, true) }()
+	done, ready := make(chan int, 1), make(chan struct{}, 1)
+	go func() { done <- serve(ctx, cancel, h.args, h.w, true, func() { ready <- struct{}{} }) }()
+	// Running only with the listener up, so a failed start is one for the
+	// service control manager and the installer too.
+	select {
+	case <-ready:
+	case code := <-done:
+		return false, uint32(code)
+	}
 	st <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown}
 	for {
 		select {
