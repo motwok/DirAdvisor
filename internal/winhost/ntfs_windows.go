@@ -48,7 +48,20 @@ var (
 	finalPathName = windows.GetFinalPathNameByHandle
 	processToken  = windows.OpenProcessToken
 	privilege     = windows.LookupPrivilegeValue
+	adjust        = adjustTokenPrivileges
 )
+
+var procAdjustTokenPrivileges = windows.NewLazySystemDLL("advapi32.dll").NewProc("AdjustTokenPrivileges")
+
+// adjustTokenPrivileges fails on ERROR_NOT_ALL_ASSIGNED too, which the call
+// reports as success with that last error.
+func adjustTokenPrivileges(tok windows.Token, tp *windows.Tokenprivileges) error {
+	r, _, err := procAdjustTokenPrivileges.Call(uintptr(tok), 0, uintptr(unsafe.Pointer(tp)), 0, 0, 0)
+	if r == 0 || errors.Is(err, windows.ERROR_NOT_ALL_ASSIGNED) {
+		return err
+	}
+	return nil
+}
 
 func le16(b []byte) uint16 { return binary.LittleEndian.Uint16(b) }
 func le32(b []byte) uint32 { return binary.LittleEndian.Uint32(b) }
@@ -242,7 +255,7 @@ func enableBackup() error {
 	}
 	tp := windows.Tokenprivileges{PrivilegeCount: 1}
 	tp.Privileges[0] = windows.LUIDAndAttributes{Luid: luid, Attributes: windows.SE_PRIVILEGE_ENABLED}
-	return windows.AdjustTokenPrivileges(tok, false, &tp, 0, nil, nil)
+	return adjust(tok, &tp)
 }
 
 // volumeName returns the `\\?\Volume{GUID}` device of a mount point, a drive

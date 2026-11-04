@@ -390,6 +390,19 @@ func TestNTFSHelpers(t *testing.T) {
 		t.Fatal("privilege")
 	}
 	privilege = windows.LookupPrivilegeValue
+	adjust = func(windows.Token, *windows.Tokenprivileges) error { return windows.ERROR_NOT_ALL_ASSIGNED }
+	if enableBackup() == nil {
+		t.Fatal("not all assigned")
+	}
+	adjust = adjustTokenPrivileges
+	// A privilege the account does not hold is reported, not silently skipped.
+	privilege = func(_ *uint16, _ *uint16, l *windows.LUID) error {
+		return windows.LookupPrivilegeValue(nil, windows.StringToUTF16Ptr("SeTcbPrivilege"), l)
+	}
+	if enableBackup() == nil {
+		t.Fatal("SeTcbPrivilege is SYSTEM's only")
+	}
+	privilege = windows.LookupPrivilegeValue
 	if _, err := openFileByID(windows.InvalidHandle, 0); err == nil {
 		t.Fatal("open by ID")
 	}

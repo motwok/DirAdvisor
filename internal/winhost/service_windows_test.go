@@ -32,8 +32,11 @@ func TestHostBackend(t *testing.T) {
 	write(t, filepath.Join(base, "a", "f"), 100000)
 	os.MkdirAll(filepath.Join(base, "d"), 0o755)
 	a := filepath.Join(base, "a")
-	if !h.Stat(a).Dir || h.Stat(filepath.Join(base, "missing")).Exists {
+	if !h.Stat(a).Dir || h.Stat(filepath.Join(base, "missing")).Exists || h.Stat(filepath.Join(base, "a", "f", "x")).Exists {
 		t.Fatal("stat")
+	}
+	if !h.Stat("bad\x00name").Exists {
+		t.Fatal("stat error is not gone")
 	}
 	if d, err := h.Dirs(base); err != nil || len(d) != 2 {
 		t.Fatalf("dirs %v %v", d, err)

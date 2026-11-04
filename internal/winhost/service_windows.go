@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	"time"
 
 	"github.com/Microsoft/go-winio"
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 )
 
@@ -88,10 +90,13 @@ func volKey(point string) string { return strings.ToUpper(strings.TrimSuffix(poi
 
 func (h *host) Endpoints() ([]Endpoint, error) { return hnsEndpoints() }
 
+// Stat: only a missing path is gone; any other error counts as present, so
+// HatchLens releases nothing on it.
 func (h *host) Stat(path string) Stat {
 	fi, err := os.Stat(path)
 	if err != nil {
-		return Stat{}
+		gone := errors.Is(err, fs.ErrNotExist) || errors.Is(err, windows.ERROR_DIRECTORY)
+		return Stat{Exists: !gone, Dir: !gone}
 	}
 	return Stat{Exists: true, Dir: fi.IsDir()}
 }

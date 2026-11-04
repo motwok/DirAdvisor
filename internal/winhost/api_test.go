@@ -54,6 +54,7 @@ func TestHandler(t *testing.T) {
 		{"GET", "/v1/id?path=x", "", 200, `"id":3`},
 		{"POST", "/v1/assign", `{"path":"x","id":4}`, 200, `"ok":true`},
 		{"POST", "/v1/assign", `{`, 400, ""},
+		{"POST", "/v1/assign", `{"path":"` + strings.Repeat("x", 1<<16) + `"}`, 400, ""},
 		{"GET", "/v1/usage?volume=C:&min=1", "", 200, `"5":{"bytes":1,"inodes":2}`},
 		{"POST", "/v1/stat", "", 405, ""},
 	} {
