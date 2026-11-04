@@ -35,6 +35,9 @@ var (
 	BuildTime = "0"
 )
 
+// stopBudget is how long the shutdown waits for the loops and the state (CON-4).
+var stopBudget = 8 * time.Second
+
 // ParseFlags parses the command line (spec section 3) and returns the -config path. Errors mean exit 2.
 func ParseFlags(args []string, out io.Writer) (string, error) {
 	fs := flag.NewFlagSet("hatchlens", flag.ContinueOnError)
@@ -264,15 +267,18 @@ func (s *Server) run(ctx context.Context, stop context.CancelFunc) int {
 	if waits == 0 {
 		<-ctx.Done()
 	}
-	for i := 0; i < waits; i++ {
-		if c := <-codes; c != 0 {
+	got := func(c int) {
+		if c != 0 {
 			code = c
 			stop()
 		}
 	}
+	left := drain(ctx, codes, waits, got)
 	stop()
-	budget, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	budget, cancel := context.WithTimeout(context.Background(), stopBudget)
 	defer cancel()
+	// A loop hung on the host filesystem does not hold the exit (WEB-6).
+	drain(budget, codes, left, got)
 	for i := 0; i < loops; i++ {
 		waitDone(budget, done)
 	}
@@ -283,6 +289,19 @@ func (s *Server) run(ctx context.Context, stop context.CancelFunc) int {
 		s.Images.Save()
 	}
 	return code
+}
+
+// drain passes up to n loop codes to got until ctx ends; returns how many are missing.
+func drain(ctx context.Context, codes <-chan int, n int, got func(int)) int {
+	for n > 0 && ctx.Err() == nil {
+		select {
+		case c := <-codes:
+			n--
+			got(c)
+		case <-ctx.Done():
+		}
+	}
+	return n
 }
 
 func waitDone(ctx context.Context, done <-chan struct{}) {
