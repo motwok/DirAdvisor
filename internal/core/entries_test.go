@@ -56,6 +56,34 @@ func TestPendingResetKeepsPathOnReuse(t *testing.T) {
 	}
 }
 
+// A bind volume re-created with another device while HatchLens did not look
+// (same key, other path, no reset pending): the old tree is reset, the new
+// path gets its own ID (PID-12). A gone old path is just dropped.
+func TestPathChangeResetsOldTree(t *testing.T) {
+	e := newEnv(t)
+	e.volume("v", nil, map[string]string{"type": "none", "o": "bind", "device": "/srv/a"})
+	e.reconcile()
+	e.walkAll()
+	e.dk.volumes = nil
+	e.volume("v", nil, map[string]string{"type": "none", "o": "bind", "device": "/srv/b"})
+	e.reconcile()
+	rk, nv := e.c.st.Entries[state.ResetKey("/srv/a")], e.c.st.Entries[state.VolumeKey("v")]
+	if rk == nil || !rk.PendingReset || rk.ProjectID != 100000 || nv.ProjectID != 100001 || nv.Path != "/srv/b" {
+		t.Fatalf("reset %+v new %+v", rk, nv)
+	}
+	e.walkAll()
+	if e.fs.projid["/srv/a"] != 0 || e.fs.projid["/srv/b"] != 100001 || e.c.st.Entries[state.ResetKey("/srv/a")] != nil {
+		t.Fatalf("ids %v entries %v", e.fs.projid, e.c.st.Entries)
+	}
+	e.dk.volumes = nil
+	delete(e.fs.dirs, "/srv/b")
+	e.volume("v", nil, map[string]string{"type": "none", "o": "bind", "device": "/srv/c"})
+	e.reconcile()
+	if e.c.st.Entries[state.ResetKey("/srv/b")] != nil || e.c.st.Entries[state.VolumeKey("v")].ProjectID != 100000 {
+		t.Fatalf("entries %v", e.c.st.Entries)
+	}
+}
+
 // An unmeasurable inner entry (foreign ID) is not in the state but must not
 // be entered by the outer walk (PID-3, PID-7).
 func TestWalkSkipsUnmeasurableInnerEntry(t *testing.T) {
