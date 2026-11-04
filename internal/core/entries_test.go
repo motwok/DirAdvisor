@@ -3,6 +3,7 @@
 package core
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -81,6 +82,27 @@ func TestPathChangeResetsOldTree(t *testing.T) {
 	e.reconcile()
 	if e.c.st.Entries[state.ResetKey("/srv/b")] != nil || e.c.st.Entries[state.VolumeKey("v")].ProjectID != 100000 {
 		t.Fatalf("entries %v", e.c.st.Entries)
+	}
+}
+
+// An inner entry removed from the config while the outer one is unmeasurable
+// just this once is still reset to the outer ID, not to 0 (PID-3a).
+func TestResetTargetWithOuterUnmeasurable(t *testing.T) {
+	e := newEnv(t)
+	e.fs.mkdir("/srv/app/cache")
+	e.cfg.Directories = []config.Directory{{Path: "/srv/app"}, {Path: "/srv/app/cache"}}
+	e.reconcile()
+	e.walkAll()
+	outer := e.c.st.Entries[state.ConfigKey("/srv/app")].ProjectID
+	e.cfg.Directories = []config.Directory{{Path: "/srv/app"}}
+	e.fs.mountErr = map[string]error{"/srv/app": errors.New("transient")}
+	e.reconcile()
+	if pe := e.c.st.Entries[state.ConfigKey("/srv/app/cache")]; !pe.PendingReset || pe.ResetTo != outer || e.reason("/srv/app") != reasonQuotaAccess {
+		t.Fatalf("entry %+v reason %q", pe, e.reason("/srv/app"))
+	}
+	e.walkAll()
+	if e.fs.projid["/srv/app/cache"] != outer {
+		t.Fatalf("ids %v", e.fs.projid)
 	}
 }
 
