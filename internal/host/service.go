@@ -146,6 +146,12 @@ type unreachable struct{ err error }
 
 func (u unreachable) Error() string { return "host service unreachable: " + u.err.Error() }
 
+// Unreachable reports an error of the host service not answering.
+func Unreachable(err error) bool {
+	var u unreachable
+	return errors.As(err, &u)
+}
+
 // pipe calls the HatchLens Host service over HTTP on its named pipe.
 type pipe struct {
 	hc, walk *http.Client

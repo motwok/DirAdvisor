@@ -398,12 +398,17 @@ func (c *Core) candidates(cfg *config.Config, snap snapshot, root string) ([]*ca
 			return dir
 		})
 		if parentMissing || err != nil {
-			if err != nil {
+			// With the host service down the static prefix stands in for the
+			// matches and gets install_host_service like every path (HOST-8).
+			reason := reasonPathMissing
+			if host.Unreachable(err) {
+				reason = ""
+			} else if err != nil {
 				c.log.Error("expanding glob failed", "path", d.Path, "err", err)
 				c.recErrors++
 			}
 			out = append(out, &candidate{key: "glob:" + d.Path, source: state.SourceConfig,
-				path: config.StaticPrefix(d.Path), order: order, reason: reasonPathMissing})
+				path: config.StaticPrefix(d.Path), order: order, reason: reason})
 			order++
 			for k, e := range c.st.Entries {
 				if e.Pattern == d.Path {
