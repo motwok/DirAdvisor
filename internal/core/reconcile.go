@@ -274,7 +274,7 @@ func (c *Core) Reconcile(ctx context.Context) error {
 	})
 	v.unmeas = slices.Compact(v.unmeas)
 	v.overlap = overlaps(v.entries)
-	c.setResetTargets(v.entries)
+	c.setResetTargets()
 	c.view = v
 	c.logActions(cfg, now)
 	if snap.ok || !cfg.Enabled(config.FnVolume) || c.dk == nil {
@@ -632,15 +632,16 @@ func overlaps(es []entryView) []overlap {
 	return out
 }
 
-// setResetTargets sets ResetTo of pending resets to the enclosing entry's ID.
-func (c *Core) setResetTargets(es []entryView) {
+// setResetTargets sets ResetTo of pending resets to the enclosing entry's ID
+// (PID-3a), from the state: an entry unmeasurable this time still holds its ID.
+func (c *Core) setResetTargets() {
 	for _, e := range c.st.Entries {
 		if !e.PendingReset {
 			continue
 		}
 		best, bestLen := uint32(0), -1
-		for _, v := range es {
-			if under(e.Path, v.Path) && len(v.Path) > bestLen {
+		for _, v := range c.st.Entries {
+			if !v.PendingReset && v.ProjectID != 0 && under(e.Path, v.Path) && len(v.Path) > bestLen {
 				best, bestLen = v.ProjectID, len(v.Path)
 			}
 		}
