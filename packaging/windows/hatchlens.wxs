@@ -20,7 +20,19 @@
         </Component>
       </Directory>
     </StandardDirectory>
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="DataFolder" Name="HatchLens">
+        <!-- Token, config, state and logs: administrators and SYSTEM only (LocalSystem is implied).
+             Shared with the other MSI, stays on uninstall. -->
+        <Component Id="DataDir" Guid="7B1C0A3E-5D2F-4C8B-9A6E-2F3D4C5B6A70" Permanent="yes">
+          <CreateFolder>
+            <Permission User="Administrators" GenericAll="yes" />
+          </CreateFolder>
+        </Component>
+      </Directory>
+    </StandardDirectory>
     <Feature Id="Main">
+      <ComponentRef Id="DataDir" />
       <ComponentRef Id="Service" />
     </Feature>
   </Package>

@@ -36,13 +36,18 @@ func loopback(addr string) error {
 }
 
 // Token reads the token from DataDir, creating it readable by administrators
-// and SYSTEM only.
+// and SYSTEM only. A directory or token planted by someone else is refused.
 func Token() (string, error) {
 	dir := logDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
 	name := filepath.Join(dir, TokenFile)
+	for _, p := range []string{dir, name} {
+		if err := CheckOwner(p); err != nil {
+			return "", err
+		}
+	}
 	if b, err := os.ReadFile(name); err == nil && len(bytes.TrimSpace(b)) > 0 {
 		return string(bytes.TrimSpace(b)), nil
 	}

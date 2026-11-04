@@ -19,6 +19,8 @@ func asService([]string) (int, bool) { return 0, false }
 
 func configEnv(bool) func(string) string { return os.Getenv }
 
+func dataOwner(bool) error { return nil }
+
 func nativeStorage(*config.Config, bool) {}
 
 // hostService: under Docker Desktop the HatchLens Host service on the Windows

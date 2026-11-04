@@ -23,6 +23,7 @@ type nullBackend struct{ winhost.Backend }
 func restoreNative(t *testing.T) {
 	t.Cleanup(func() {
 		isService, runService, startHost, dataDir, openLog = svc.IsWindowsService, svc.Run, winhost.Start, winhost.DataDir, winhost.OpenLog
+		checkOwner = winhost.CheckOwner
 	})
 }
 
@@ -106,6 +107,14 @@ func TestNativeDefaults(t *testing.T) {
 	if configEnv(false)("HATCHLENS_CONFIG") != "x: 1" {
 		t.Fatal("plain environment")
 	}
+	checkOwner = func(p string) error { return errors.New(p) }
+	if dataOwner(false) != nil || dataOwner(true) == nil {
+		t.Fatal("owner check")
+	}
+	if serve(context.Background(), func() {}, nil, io.Discard, true) != 1 {
+		t.Fatal("untrusted data dir")
+	}
+	checkOwner = winhost.CheckOwner
 	cfg := config.Default()
 	nativeStorage(cfg, false)
 	if cfg.Global.StoragePath != `C:\data` {

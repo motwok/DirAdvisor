@@ -13,6 +13,9 @@ import (
 )
 
 func TestHostServiceDockerDesktop(t *testing.T) {
+	if dataOwner(true) != nil {
+		t.Fatal("no data dir to check")
+	}
 	if hostService(context.Background(), &config.Config{}, nil, false) != nil {
 		t.Fatal("no host_socket, no service")
 	}

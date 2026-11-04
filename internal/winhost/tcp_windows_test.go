@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/windows"
 )
 
 func TestLoopback(t *testing.T) {
@@ -28,6 +30,7 @@ func TestLoopback(t *testing.T) {
 func TestToken(t *testing.T) {
 	saved := logDir
 	defer func() { logDir = saved }()
+	trustOwner(t)
 	dir := t.TempDir()
 	logDir = func() string { return dir }
 	a, err := Token()
@@ -47,6 +50,11 @@ func TestToken(t *testing.T) {
 	logDir = func() string { return filepath.Join(file, "sub") }
 	if _, err := Token(); err == nil {
 		t.Fatal("data dir")
+	}
+	logDir = func() string { return dir }
+	fileOwner = func(string) (*windows.SID, error) { return windows.CreateWellKnownSid(windows.WinWorldSid) }
+	if _, err := Token(); err == nil {
+		t.Fatal("planted token")
 	}
 }
 
@@ -77,6 +85,7 @@ func freePort(t *testing.T) string {
 func TestServeTCP(t *testing.T) {
 	sl, sd := listen, logDir
 	defer func() { listen, logDir = sl, sd }()
+	trustOwner(t)
 	dir := t.TempDir()
 	logDir = func() string { return dir }
 	listen = tcpListen(t)
