@@ -526,18 +526,14 @@ func (c *Core) release(cfg *config.Config, snap snapshot, cands []*candidate, pr
 func (c *Core) ensureID(cd *candidate, m host.Mount, r config.IDRange) (*state.Entry, string) {
 	inRange := func(id uint32) bool { return int64(id) >= r.From && int64(id) <= r.To }
 	e := c.st.Entries[cd.key]
-	if e != nil && e.PendingReset {
-		if e.Path == cd.path {
-			e.PendingReset, e.ResetTo, e.WalkDone = false, 0, false
-		} else {
-			// Same key, other path (volume re-created elsewhere): the reset
-			// goes on under its own key, the candidate starts fresh (PID-12).
-			if _, busy := c.st.Entries[state.ResetKey(e.Path)]; !busy {
-				c.st.Entries[state.ResetKey(e.Path)] = e
-			}
-			delete(c.st.Entries, cd.key)
-			e = nil
-		}
+	if e != nil && e.PendingReset && e.Path == cd.path {
+		e.PendingReset, e.ResetTo, e.WalkDone = false, 0, false
+	}
+	if e != nil && e.Path != cd.path {
+		// Same key, other path (volume re-created elsewhere, seen or not): the
+		// old tree is reset under its own key, the candidate starts fresh (PID-12).
+		c.park(cd.key, e)
+		e = nil
 	}
 	if e != nil && e.ProjectID != 0 {
 		if e.WalkDone {
@@ -579,6 +575,20 @@ func (c *Core) ensureID(cd *candidate, m host.Mount, r config.IDRange) (*state.E
 	e.ProjectID, e.WalkDone = id, false
 	c.fillEntry(e, cd)
 	return e, ""
+}
+
+// park moves an entry whose path its key no longer names to the reset key of
+// that path, unless a reset is already pending there or the path is gone.
+func (c *Core) park(key string, e *state.Entry) {
+	delete(c.st.Entries, key)
+	if _, busy := c.st.Entries[state.ResetKey(e.Path)]; busy {
+		return
+	}
+	if exists, _ := c.fs.Stat(e.Path); !exists {
+		return
+	}
+	e.PendingReset, e.ResetTo, e.WalkDone = true, 0, false
+	c.st.Entries[state.ResetKey(e.Path)] = e
 }
 
 func (c *Core) fillEntry(e *state.Entry, cd *candidate) {
