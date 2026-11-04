@@ -19,6 +19,7 @@ import (
 	"github.com/motwok/HatchLens/internal/config"
 	"github.com/motwok/HatchLens/internal/core"
 	"github.com/motwok/HatchLens/internal/docker"
+	"github.com/motwok/HatchLens/internal/host"
 )
 
 type handlerRT struct{ h http.Handler }
@@ -39,6 +40,34 @@ func TestLoopEvents(t *testing.T) {
 	cancel()
 	if code := <-done; code != 0 {
 		t.Fatalf("exit %d", code)
+	}
+}
+
+// hungFS blocks in Stat like a hung NFS mount.
+type hungFS struct{ host.FS }
+
+func (hungFS) Stat(string) (bool, bool) { select {} }
+
+// A reconcile hung on the host filesystem does not hold the shutdown beyond
+// the budget (WEB-6, CON-4).
+func TestRunWithHungReconcile(t *testing.T) {
+	saved := stopBudget
+	defer func() { stopBudget = saved }()
+	stopBudget = 100 * time.Millisecond
+	s := testServer(t, "disable: [ volume, image, cpu, ram, disk, net ]\ndirectories:\n  - path: /x")
+	s.Core = core.New(s.Core.Config(), core.Options{FS: hungFS{}, StorageDir: t.TempDir(), Log: s.Log})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan int, 1)
+	go func() { done <- s.run(ctx, cancel) }()
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	select {
+	case code := <-done:
+		if code != 0 {
+			t.Fatalf("exit %d", code)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("run did not return")
 	}
 }
 
