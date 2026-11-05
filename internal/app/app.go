@@ -146,12 +146,14 @@ func Main(args []string, stderr io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 	signal.Ignore(syscall.SIGHUP)
-	return serve(ctx, stop, args, stderr, false)
+	return serve(ctx, stop, args, stderr, false, nil)
 }
 
 // serve runs HatchLens until ctx ends; native: as a Windows service on the
 // host, with the host part in this process.
-func serve(ctx context.Context, stop context.CancelFunc, args []string, stderr io.Writer, native bool) int {
+// serve runs HatchLens until ctx ends; ready, if set, is called once the
+// listener is up.
+func serve(ctx context.Context, stop context.CancelFunc, args []string, stderr io.Writer, native bool, ready func()) int {
 	path, err := ParseFlags(args, stderr)
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -231,6 +233,9 @@ func serve(ctx context.Context, stop context.CancelFunc, args []string, stderr i
 	}
 	srv := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second, WriteTimeout: time.Minute, IdleTimeout: 2 * time.Minute}
 	go srv.Serve(ln)
+	if ready != nil {
+		ready()
+	}
 	if dc != nil {
 		go s.watchEvents(ctx, dc, time.Second, time.Minute)
 	}

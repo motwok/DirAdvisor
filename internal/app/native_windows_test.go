@@ -23,7 +23,7 @@ type nullBackend struct{ winhost.Backend }
 func restoreNative(t *testing.T) {
 	t.Cleanup(func() {
 		isService, runService, startHost, dataDir, openLog = svc.IsWindowsService, svc.Run, winhost.Start, winhost.DataDir, winhost.OpenLog
-		checkOwner = winhost.CheckOwner
+		checkOwner, serveFn = winhost.CheckOwner, serve
 	})
 }
 
@@ -81,8 +81,32 @@ func TestServiceExecute(t *testing.T) {
 	if code := <-res; code != 0 {
 		t.Fatalf("stop: %d", code)
 	}
-	if _, code := (handler{args: []string{"--bogus"}, w: io.Discard}).Execute(nil, make(chan svc.ChangeRequest), make(chan svc.Status, 10)); code != 2 {
+	st = make(chan svc.Status, 10)
+	if _, code := (handler{args: []string{"--bogus"}, w: io.Discard}).Execute(nil, make(chan svc.ChangeRequest), st); code != 2 {
 		t.Fatalf("bad flag: %d", code)
+	}
+	for len(st) > 0 {
+		if s := <-st; s.State == svc.Running {
+			t.Fatal("running without a listener")
+		}
+	}
+	// A service dying after the start ends with its exit code.
+	gate := make(chan struct{})
+	serveFn = func(_ context.Context, _ context.CancelFunc, _ []string, _ io.Writer, _ bool, ready func()) int {
+		ready()
+		<-gate
+		return 1
+	}
+	st = make(chan svc.Status, 10)
+	go func() {
+		_, code := handler{w: io.Discard}.Execute(nil, make(chan svc.ChangeRequest), st)
+		res <- uint32(code)
+	}()
+	for s := <-st; s.State != svc.Running; s = <-st {
+	}
+	close(gate)
+	if code := <-res; code != 1 {
+		t.Fatalf("died: %d", code)
 	}
 }
 
@@ -111,7 +135,7 @@ func TestNativeDefaults(t *testing.T) {
 	if dataOwner(false) != nil || dataOwner(true) == nil {
 		t.Fatal("owner check")
 	}
-	if serve(context.Background(), func() {}, nil, io.Discard, true) != 1 {
+	if serve(context.Background(), func() {}, nil, io.Discard, true, nil) != 1 {
 		t.Fatal("untrusted data dir")
 	}
 	checkOwner = winhost.CheckOwner

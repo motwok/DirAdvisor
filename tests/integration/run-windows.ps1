@@ -170,6 +170,13 @@ if (Get-Service HatchLensHost -ErrorAction SilentlyContinue) { Fail 'service sti
 Step 'HatchLens as one Windows service on the host'
 $pd = Join-Path $env:ProgramData 'HatchLens'
 New-Item -ItemType Directory -Force $pd | Out-Null
+# A service that cannot listen fails to start, and so does the installer.
+"listen_address: '256.0.0.1:1'" | Set-Content -Encoding ascii (Join-Path $pd 'config.yml')
+$p = Start-Process msiexec -ArgumentList '/i', "`"$FullMsi`"", '/qn', '/l*v', "`"$(Join-Path $data 'msi-bad.log')`"" -Wait -PassThru
+if ($p.ExitCode -eq 0 -or -not ((Get-Content (Join-Path $data 'msi-bad.log')) -match 'Error 1920')) {
+    Get-Content (Join-Path $data 'msi-bad.log') -Tail 40 | Write-Host; Fail "msiexec /i with a bad listen_address: $($p.ExitCode)"
+}
+if (Get-Service HatchLens -ErrorAction SilentlyContinue) { Fail 'service installed although it cannot listen' }
 @"
 reconcile_interval: 5s
 directories:
