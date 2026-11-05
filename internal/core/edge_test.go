@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -125,6 +126,14 @@ func TestExcludedDirectoriesAndGlobErrors(t *testing.T) {
 	e.reconcile()
 	if e.reason("/var/lib") != reasonPathMissing || e.c.recErrors != 1 {
 		t.Fatalf("glob error: %+v", e.c.view.unmeas)
+	}
+	// The host service down is an admin action, not a missing path (HOST-8).
+	_, down := host.NewService("", func(context.Context, string, string) (net.Conn, error) { return nil, errors.New("down") }).ListDirs("/C:/x")
+	e.fs.listErr = down
+	e.fs.status["/"] = host.InstallHostService
+	e.reconcile()
+	if e.reason("/var/lib") != host.InstallHostService || e.c.recErrors != 1 {
+		t.Fatalf("glob with the host service down: %+v errors %v", e.c.view.unmeas, e.c.recErrors)
 	}
 }
 

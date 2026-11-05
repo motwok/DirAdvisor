@@ -131,6 +131,9 @@ func TestServiceUnreachable(t *testing.T) {
 	if m, _ := s.MountOf("relative"); m.Point != "relative" {
 		t.Fatal("drive of a path without drive")
 	}
+	if _, err := s.ListDirs("/C:/data"); !Unreachable(err) || Unreachable(fs.ErrNotExist) || Unreachable(nil) {
+		t.Fatalf("dirs: %v", err)
+	}
 	if _, err := s.Endpoints(context.Background()); err == nil || !strings.HasPrefix(err.Error(), "host service unreachable: ") || !strings.Contains(err.Error(), "no pipe") {
 		t.Fatalf("endpoints: %v", err)
 	}
