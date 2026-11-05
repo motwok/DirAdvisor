@@ -132,6 +132,10 @@ func TestMainExitCodes(t *testing.T) {
 			t.Fatalf("not a directory: %d", code)
 		}
 	}
+	t.Setenv("HATCHLENS_CONFIG", "{ disable: [ volume, image, cpu, ram, disk, net ], docker_socket: '', host_socket: '', directories: [ { path: 'D:/x' } ] }")
+	if code := Main(nil, &errb); code != 1 || !strings.Contains(errb.String(), "host_socket") {
+		t.Fatalf("drive path without host_socket: %d", code)
+	}
 	t.Setenv("HATCHLENS_CONFIG", "{ disable: [ volume, image, cpu, ram, disk, net ], listen_address: '256.0.0.1:1', storage_path: '"+dir+"', docker_socket: '' }")
 	if code := Main(nil, &errb); code != 1 || !strings.Contains(errb.String(), "listen failed") {
 		t.Fatalf("listen failure: %d", code)

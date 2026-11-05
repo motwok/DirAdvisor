@@ -7,6 +7,7 @@ package host
 import (
 	"context"
 	"errors"
+	"os"
 )
 
 var errUnsupported = errors.New("only supported on Linux")
@@ -29,4 +30,9 @@ func (other) Walk(context.Context, string, uint32, bool, map[string]bool, int) e
 	return errUnsupported
 }
 
-func SelfContainerID() string { return "" }
+// SelfContainerID is the hostname, which a Windows container sets to its ID
+// (OWN-7); a machine name never matches a container ID.
+func SelfContainerID() string {
+	h, _ := os.Hostname()
+	return h
+}

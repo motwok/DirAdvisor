@@ -120,7 +120,7 @@ func dataOwner(native bool) error {
 
 // nativeStorage: as a service the default state directory is DataDir.
 func nativeStorage(cfg *config.Config, native bool) {
-	if native && cfg.Global.StoragePath == config.Default().Global.StoragePath {
+	if native && !cfg.StorageSet() {
 		cfg.Global.StoragePath = dataDir()
 	}
 }

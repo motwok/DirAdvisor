@@ -146,11 +146,14 @@ func TestImageHelpers(t *testing.T) {
 
 func TestHostSocket(t *testing.T) {
 	c, err := Parse([]byte(`directories: [ { path: 'D:\data\x' } ]`), env(nil), nil)
+	if err != nil || c.Directories[0].Path != "/D:/data/x" {
+		t.Fatalf("Windows path: %+v %v", c, err)
+	}
 	if windows {
-		if err != nil || c.Directories[0].Path != "/D:/data/x" {
-			t.Fatalf("Windows path: %+v %v", c, err)
+		if err := c.CheckHostSocket(); err != nil {
+			t.Fatal(err)
 		}
-	} else if err == nil || !strings.Contains(err.Error(), `D:\data\x needs host_socket`) {
+	} else if err := c.CheckHostSocket(); err == nil || !strings.Contains(err.Error(), `D:\data\x needs host_socket`) {
 		t.Fatalf("a Windows path on Linux needs the host service: %v", err)
 	}
 	c, err = Parse([]byte("host_socket: tcp://host.docker.internal:8091\nhost_token: ${T}\ndirectories: [ { path: 'D:\\data' } ]"), env(map[string]string{"T": "tok"}), nil)
@@ -160,12 +163,25 @@ func TestHostSocket(t *testing.T) {
 	if _, err := Parse([]byte(`host_socket: tcp://host.docker.internal:8091`), env(nil), nil); err == nil || !strings.Contains(err.Error(), "host_token") {
 		t.Fatalf("TCP without token: %v", err)
 	}
-	_, err = Parse([]byte(`host_socket: ""`), env(nil), nil)
-	if windows != (err != nil) {
+	c, err = Parse([]byte(`host_socket: ""`), env(nil), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.CheckHostSocket(); windows != (err != nil) {
 		t.Fatalf("empty host_socket on windows=%v: %v", windows, err)
 	}
-	if _, err := Parse([]byte(`{ host_socket: "", disable: [ directory, volume ] }`), env(nil), nil); err != nil {
+	c, err = Parse([]byte(`{ host_socket: "", disable: [ directory, volume ] }`), env(nil), nil)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if err := c.CheckHostSocket(); err != nil {
+		t.Fatal(err)
+	}
+	if c.StorageSet() {
+		t.Fatal("StorageSet without the key")
+	}
+	if c, err = Parse([]byte(`storage_path: /x`), env(nil), nil); err != nil || !c.StorageSet() {
+		t.Fatalf("StorageSet: %v", err)
 	}
 }
 
@@ -355,9 +371,15 @@ labels:
     labels: { a: "4" }
   - match: { container: web }
     labels: { d: "5" }
+  - match: { path: 'C:\data\*' }
+    labels: { e: "6" }
 `), env(nil), nil)
 	if err != nil {
 		t.Fatal(err)
+	}
+	win := "/C:/data/x"
+	if got := c.RuleLabels(Subject{Path: &win}); !reflect.DeepEqual(got, map[string]string{"e": "6"}) {
+		t.Fatalf("Windows path rule: %v", got)
 	}
 	stack, vol, path, ctr := "app", "vol1", "/srv/x", "web"
 	if got := c.RuleLabels(Subject{Stack: &stack, Volume: &vol, Path: &path, Container: &ctr}); !reflect.DeepEqual(got,

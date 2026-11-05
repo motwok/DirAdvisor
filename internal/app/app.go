@@ -175,6 +175,13 @@ func serve(ctx context.Context, stop context.CancelFunc, args []string, stderr i
 		NewLogger("info", "logfmt", stderr).Error("invalid config", "source", src, "err", err)
 		return 1
 	}
+	if !native {
+		err = cfg.CheckHostSocket()
+	}
+	if err != nil {
+		NewLogger("info", "logfmt", stderr).Error("invalid config", "source", src, "err", err)
+		return 1
+	}
 	nativeStorage(cfg, native)
 	g := cfg.Global
 	log := NewLogger(g.LogLevel, g.LogFormat, stderr)
