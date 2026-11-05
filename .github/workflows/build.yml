@@ -363,7 +363,8 @@ jobs:
           linux=$(docker buildx imagetools inspect --raw "$IMG@$LINUX" | jq -r '.manifests[].digest')
           win=$(jq -r '"\(.["containerimage.digest"]) \(.["containerimage.descriptor"].platform["os.version"])"' meta-*.json)
           docker run --rm -i -e IMG -e VERSION -e LINUX_DIGESTS="$linux" -e WIN="$win" \
-            -v "$HOME/.docker/config.json:/root/.docker/config.json:ro" docker:29-cli sh -eu <<'EOF'
+            -v "$HOME/.docker/config.json:/root/.docker/config.json:ro" \
+            docker:29-cli@sha256:4d742ab934c2149b628bf26369ac3ec51cb91e2e28fe6722a0e86a6d6efc4bd5 sh -eu <<'EOF'
           for tag in "$VERSION" latest; do
             refs=
             for d in $LINUX_DIGESTS $(echo "$WIN" | cut -d' ' -f1); do refs="$refs $IMG@$d"; done
