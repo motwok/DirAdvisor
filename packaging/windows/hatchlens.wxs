@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- HatchLens as a Windows service on the host, everything in one process.
-     Build: wix build -arch x64 -d Version=X.Y.Z -d Exe=hatchlens.exe -->
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+     Build: wix build -ext WixToolset.Util.wixext -arch x64 -d Version=X.Y.Z -d Exe=hatchlens.exe -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <Package Name="HatchLens" Manufacturer="Emmo Emminghaus" Version="$(Version)"
            UpgradeCode="E3AC1559-05D6-41CB-8BA1-BA182C28A430" Scope="perMachine" Compressed="yes">
     <MajorUpgrade AllowSameVersionUpgrades="yes"
@@ -15,11 +15,8 @@
           <ServiceInstall Id="ServiceInstall" Name="HatchLens" DisplayName="HatchLens"
                           Description="Prometheus exporter: Docker volume and directory sizes, image updates, container usage."
                           Type="ownProcess" Start="auto" Account="LocalSystem" ErrorControl="normal" Vital="yes">
-            <ServiceConfigFailureActions OnInstall="yes" OnReinstall="yes" ResetPeriod="86400">
-              <Failure Action="restartService" Delay="60000" />
-              <Failure Action="restartService" Delay="60000" />
-              <Failure Action="restartService" Delay="60000" />
-            </ServiceConfigFailureActions>
+            <util:ServiceConfig ServiceName="HatchLens" FirstFailureActionType="restart" SecondFailureActionType="restart"
+                                ThirdFailureActionType="restart" RestartServiceDelayInSeconds="60" ResetPeriodInDays="1" />
           </ServiceInstall>
           <ServiceControl Id="ServiceControl" Name="HatchLens" Start="install" Stop="both"
                           Remove="uninstall" Wait="yes" />
