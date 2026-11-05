@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -59,6 +60,44 @@ func TestUsageCacheAndSingleflight(t *testing.T) {
 	wg.Wait()
 	if e.fs.usageCalls != before+2 {
 		t.Fatalf("parallel scrapes: %d calls", e.fs.usageCalls-before)
+	}
+	// Waiters needing a group the read in flight lacks share the one read
+	// started after it instead of each starting their own.
+	e.now = e.now.Add(usageTTL)
+	gate := make(chan struct{})
+	var skip atomic.Bool
+	e.fs.onUsage = func() {
+		if !skip.Load() {
+			<-gate
+		}
+	}
+	first := make(chan struct{})
+	go func() { e.c.Collect(context.Background()); close(first) }()
+	time.Sleep(20 * time.Millisecond)
+	skip.Store(true)
+	e.fs.mkdir("/srv/y")
+	e.fs.mounts["/srv/y"] = hostMount("/srv/y", "xfs", "/dev/sdc")
+	e.cfg.Directories = append(e.cfg.Directories, config.Directory{Path: "/srv/y"})
+	e.reconcile()
+	skip.Store(false)
+	before = e.fs.usageCalls
+	var waiters sync.WaitGroup
+	for i := 0; i < 3; i++ {
+		waiters.Add(1)
+		go func() { defer waiters.Done(); e.c.Collect(context.Background()) }()
+	}
+	time.Sleep(20 * time.Millisecond)
+	close(gate)
+	<-first
+	waiters.Wait()
+	// The first read's second mount, then one read of the three mounts (not
+	// one per waiter).
+	if n := e.fs.usageCalls - before; n != 4 {
+		t.Fatalf("second-level waiters: %d calls", n)
+	}
+	e.fs.onUsage = func() {
+		once.Do(func() { close(started) })
+		<-release
 	}
 	// A waiter whose context ends while the read hangs gives up without usage.
 	e.now = e.now.Add(usageTTL)

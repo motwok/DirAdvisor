@@ -41,13 +41,14 @@ func resolveOwner(vol docker.Volume, cs []docker.Container, prev *state.Entry, s
 			if c.State == "running" {
 				o.Used = true
 			}
+			if !m.RW {
+				continue
+			}
 			if isSelf(c, self) {
 				o.State = StateRunning
 				continue
 			}
-			if m.RW {
-				writers = append(writers, c)
-			}
+			writers = append(writers, c)
 		}
 	}
 	prevOwner, prevStack := "", ""

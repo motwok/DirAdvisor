@@ -57,6 +57,19 @@ func TestPendingResetKeepsPathOnReuse(t *testing.T) {
 	}
 }
 
+// Two configured paths differing only in case name one directory on a
+// Windows drive (DIS-9a).
+func TestDuplicatePathCaseOnDrive(t *testing.T) {
+	e := newEnv(t)
+	e.fs.mkdir("/C:/Data")
+	e.fs.mkdir("/C:/data")
+	e.cfg.Directories = []config.Directory{{Path: "/C:/Data"}, {Path: "/C:/data"}}
+	e.reconcile()
+	if e.reason("/C:/data") != reasonDuplicatePath || e.entry("/C:/Data") == nil {
+		t.Fatalf("reason %q entries %+v", e.reason("/C:/data"), e.c.view.entries)
+	}
+}
+
 // A bind volume re-created with another device while HatchLens did not look
 // (same key, other path, no reset pending): the old tree is reset, the new
 // path gets its own ID (PID-12). A gone old path is just dropped.

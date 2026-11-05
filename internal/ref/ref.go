@@ -61,6 +61,18 @@ func (r Ref) String() string {
 	return s
 }
 
+// SwarmTaskLabel marks a container as a Swarm task.
+const SwarmTaskLabel = "com.docker.swarm.task.id"
+
+// Unpinned drops the digest Swarm appends to a tagged service image, so
+// "name:tag@sha256:..." is handled as the user wrote it (REF-4).
+func Unpinned(written string, labels map[string]string) string {
+	if r := Parse(written); labels[SwarmTaskLabel] != "" && r.Tag != "" && r.Digest != "" {
+		return written[:strings.LastIndex(written, "@")]
+	}
+	return written
+}
+
 // IsImageID reports whether s is imageID or a prefix of it, with or without "sha256:".
 func IsImageID(s, imageID string) bool {
 	s = strings.TrimPrefix(s, "sha256:")

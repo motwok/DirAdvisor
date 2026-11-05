@@ -73,7 +73,7 @@ func volumeLabels(cfg *config.Config, vol docker.Volume, path string, o ownershi
 			set(k, v)
 		}
 	}
-	for k, v := range cfg.RuleLabels(config.Subject{Stack: &o.Stack, Container: &o.Owner, Volume: &vol.Name, Path: &path}) {
+	for k, v := range cfg.RuleLabels(config.Subject{Stack: config.Opt(o.Stack), Container: config.Opt(o.Owner), Volume: &vol.Name, Path: &path}) {
 		set(k, v)
 	}
 	return out, ctr
@@ -107,7 +107,7 @@ func isAllowlistTarget(refs []config.LabelRef, name string) bool {
 // directory's own labels win.
 func withRules(cfg *config.Config, stack, path string, own map[string]string) map[string]string {
 	out := map[string]string{}
-	for k, v := range cfg.RuleLabels(config.Subject{Stack: &stack, Path: &path}) {
+	for k, v := range cfg.RuleLabels(config.Subject{Stack: config.Opt(stack), Path: &path}) {
 		if v != "" {
 			out[k] = v
 		}

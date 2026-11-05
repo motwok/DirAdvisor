@@ -205,9 +205,10 @@ func (c *Core) observe(ctx context.Context) ([]target, error) {
 		if err != nil {
 			return nil, err
 		}
-		images := []string{in.image}
-		if !ref.IsImageID(in.image, ct.ImageID) {
-			images = append(images, ref.Parse(in.image).String())
+		image := ref.Unpinned(in.image, ct.Labels)
+		images := []string{image}
+		if !ref.IsImageID(image, ct.ImageID) {
+			images = append(images, ref.Parse(image).String())
 		}
 		if c.cfg.ExcludedContainer(ct.Name(), ct.Labels, images...) {
 			continue

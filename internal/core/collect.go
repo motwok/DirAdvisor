@@ -44,11 +44,15 @@ func (c *Core) readUsage(ctx context.Context, groups map[string]*usageGroup) map
 		return c.usage.data, true
 	}
 	c.usage.mu.Lock()
-	if d, ok := fresh(); ok {
-		c.usage.mu.Unlock()
-		return d
-	}
-	if wait := c.usage.done; wait != nil {
+	for {
+		if d, ok := fresh(); ok {
+			c.usage.mu.Unlock()
+			return d
+		}
+		wait := c.usage.done
+		if wait == nil {
+			break
+		}
 		c.usage.mu.Unlock()
 		// A read hung in a ZFS tool must not hold every scrape (WEB-6).
 		select {
@@ -57,10 +61,6 @@ func (c *Core) readUsage(ctx context.Context, groups map[string]*usageGroup) map
 			return nil
 		}
 		c.usage.mu.Lock()
-		if d, ok := fresh(); ok {
-			c.usage.mu.Unlock()
-			return d
-		}
 	}
 	done := make(chan struct{})
 	c.usage.done = done
