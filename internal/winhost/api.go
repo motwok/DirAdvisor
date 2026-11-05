@@ -99,7 +99,7 @@ func Handler(b Backend, version string) http.Handler {
 	})
 	mux.HandleFunc("POST /v1/assign", func(w http.ResponseWriter, r *http.Request) {
 		var req assignRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
