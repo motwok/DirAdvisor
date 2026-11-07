@@ -251,6 +251,11 @@ func (c *Core) apply(cfg *config.Config, obs []observed) {
 				c.compare(&e, rs, sk, now)
 				if e.Available == 1 {
 					up[sk] = true
+					// The known registry digest may be older than the new running image (REG-10).
+					if p, ok := prev[e.Container]; ok && p.Ref == e.Ref && !slices.Equal(p.running, e.running) &&
+						rs.Reason == "" && rs.Due > now {
+						rs.Due = now
+					}
 				} else {
 					down[sk] = true
 				}

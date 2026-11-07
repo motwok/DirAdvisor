@@ -589,3 +589,52 @@ func TestShutdownDuringCheck(t *testing.T) {
 	}
 	r.hasNot(`image_check_error`)
 }
+
+func TestRecheckAfterImageSwap(t *testing.T) {
+	r := newRig(t, "images: { check_interval: 24h }")
+	r.f.add("web", "nginx:1.29", "sha256:old", "running", nil, "nginx@sha256:idx0")
+	r.f.dist[nginx] = "sha256:idx1"
+	r.reconcile()
+	r.checkAll()
+	r.reconcile()
+	r.has(`hatchlens_container_image_update_available{container="web",image="nginx:1.29",stack=""} 1`)
+
+	// The registry moved on to idx2 unseen; the container is recreated on it.
+	r.f.dist[nginx] = "sha256:idx2"
+	r.clk.add(time.Minute)
+	r.f.containers[0].ImageID = "sha256:new"
+	r.f.images["sha256:new"] = docker.Image{ID: "sha256:new", RepoDigests: []string{"nginx@sha256:idx2"}}
+	r.reconcile()
+	if rs := r.c.st.Refs[nginx]; rs.Due != r.clk.now().Unix() {
+		t.Fatalf("not due after the swap: %d", rs.Due)
+	}
+	calls := len(r.f.distRefs)
+	r.checkAll()
+	if len(r.f.distRefs) != calls+1 {
+		t.Fatal("no recheck")
+	}
+	r.reconcile()
+	r.has(`hatchlens_container_image_update_available{container="web",image="nginx:1.29",stack=""} 0`)
+	r.hasNot("since_timestamp_seconds{")
+
+	// Unchanged running digests and a failing reference keep their due time.
+	r.f.dist[nginx] = "sha256:idx3"
+	r.clk.add(25 * time.Hour)
+	r.checkAll()
+	r.reconcile()
+	due := r.c.st.Refs[nginx].Due
+	r.reconcile()
+	if r.c.st.Refs[nginx].Due != due {
+		t.Fatal("due changed without a swap")
+	}
+	r.f.distErr[nginx] = errBoom
+	r.clk.add(25 * time.Hour)
+	r.checkAll()
+	due = r.c.st.Refs[nginx].Due
+	r.f.containers[0].ImageID = "sha256:other"
+	r.f.images["sha256:other"] = docker.Image{ID: "sha256:other"}
+	r.reconcile()
+	if r.c.st.Refs[nginx].Due != due {
+		t.Fatal("backoff skipped")
+	}
+}

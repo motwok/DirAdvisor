@@ -214,7 +214,8 @@ newer image for the reference the container was started with. Nothing is pulled 
   trigger a reconcile at once, so this is only the fallback.
 - **`images.check_interval`:** how often the registry is asked per image reference. A new reference is
   checked at once; after that the checks of all references are spread over the interval. Checks go out
-  one at a time, at least 10 seconds apart per registry.
+  one at a time, at least 10 seconds apart per registry. A container recreated on another image that
+  still shows an update gets its reference checked again at once.
 - A failed check is repeated after 5 minutes, doubling up to `check_interval`. A registry that answers
   429 (rate limit) is not asked for 5 minutes, doubling up to `check_interval`.
 
