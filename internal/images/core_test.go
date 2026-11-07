@@ -597,7 +597,7 @@ func TestRecheckAfterImageSwap(t *testing.T) {
 	r.reconcile()
 	r.checkAll()
 	r.reconcile()
-	r.has(`hatchlens_container_image_update_available{container="web",image="nginx:1.29",stack=""} 1`)
+	r.has(`hatchlens_container_image_update_available{container="web",image="nginx:1.29"} 1`)
 
 	// The registry moved on to idx2 unseen; the container is recreated on it.
 	r.f.dist[nginx] = "sha256:idx2"
@@ -614,7 +614,7 @@ func TestRecheckAfterImageSwap(t *testing.T) {
 		t.Fatal("no recheck")
 	}
 	r.reconcile()
-	r.has(`hatchlens_container_image_update_available{container="web",image="nginx:1.29",stack=""} 0`)
+	r.has(`hatchlens_container_image_update_available{container="web",image="nginx:1.29"} 0`)
 	r.hasNot("since_timestamp_seconds{")
 
 	// Unchanged running digests and a failing reference keep their due time.
