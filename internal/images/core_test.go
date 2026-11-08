@@ -684,3 +684,58 @@ func TestRecheckSwarmOverlap(t *testing.T) {
 		t.Fatal("rechecked again during the overlap")
 	}
 }
+
+func TestLocalBuilds(t *testing.T) {
+	const own = "docker.io/library/myapp:1"
+	r := newRig(t, "images: { check_interval: 1h }")
+	r.f.origin = docker.OriginRepoDigests
+	r.f.add("built", "myapp:1", "sha256:b1", "running", nil)
+	r.f.images[own] = docker.Image{ID: "sha256:b1"}
+	r.f.add("pulled", "nginx:1.29", "sha256:p1", "running", nil, "nginx@sha256:idx1")
+	r.f.add("gone", "nginx:1.29", "sha256:g1", "running", nil)
+	delete(r.f.images, "sha256:g1")
+	r.f.dist[nginx] = "sha256:idx1"
+	r.reconcile()
+	r.checkAll()
+	r.reconcile()
+	r.has(`hatchlens_container_image_info{container="built",mode="local",reference="`+own+`",state="running"} 1`,
+		`hatchlens_container_image_update_pulled{container="built",image="myapp:1"} 0`,
+		`hatchlens_container_image_info{container="pulled",mode="checked",reference="`+nginx+`",state="running"} 1`,
+		`hatchlens_container_image_info{container="gone",mode="checked",reference="`+nginx+`",state="running"} 1`)
+	r.hasNot(`update_available{container="built"`, own+`"} `)
+	if strings.Contains(strings.Join(r.f.distRefs, " "), own) || r.f.identities != 0 {
+		t.Fatalf("checked a local build: %v %d", r.f.distRefs, r.f.identities)
+	}
+
+	// Rebuilt, not recreated.
+	r.f.images[own] = docker.Image{ID: "sha256:b2"}
+	r.reconcile()
+	r.has(`hatchlens_container_image_update_pulled{container="built",image="myapp:1"} 1`)
+
+	// containerd store: Identity.Pull decides, RepoDigests do not.
+	r.f.origin = docker.OriginIdentity
+	r.f.images["sha256:b1"] = docker.Image{ID: "sha256:b1", RepoDigests: []string{"myapp@sha256:b1"},
+		Identity: &docker.Identity{}}
+	r.f.images["sha256:p1"] = docker.Image{ID: "sha256:p1", RepoDigests: []string{"nginx@sha256:idx1"},
+		Identity: &docker.Identity{Pull: []docker.PullIdentity{{Repository: "docker.io/library/nginx"}}}}
+	r.f.add("bare", "myapp:1", "sha256:b3", "running", nil, "myapp@sha256:b3")
+	r.reconcile()
+	r.has(`hatchlens_container_image_info{container="built",mode="local",reference="`+own+`",state="running"} 1`,
+		`hatchlens_container_image_info{container="bare",mode="local",reference="`+own+`",state="running"} 1`,
+		`hatchlens_container_image_info{container="pulled",mode="checked",reference="`+nginx+`",state="running"} 1`,
+		`hatchlens_container_image_update_available{container="pulled",image="nginx:1.29"} 0`)
+	if r.f.identities == 0 {
+		t.Fatal("no identity inspect")
+	}
+
+	// No decision possible: everything named is checked.
+	r.f.origin = docker.OriginNone
+	r.reconcile()
+	r.has(`hatchlens_container_image_info{container="built",mode="pending",reference="` + own + `",state="running"} 1`)
+
+	r.f.originErr = errBoom
+	r.reconcile()
+	if _, errs := r.c.Stats(); errs != 1 {
+		t.Fatalf("origin error not counted: %v", errs)
+	}
+}

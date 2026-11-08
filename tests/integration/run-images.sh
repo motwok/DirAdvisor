@@ -129,9 +129,9 @@ is 0 container_image_update_pulled 'container="app"' || fail "app pulled"
 ! has container_image_update_available_since_timestamp_seconds 'container="app"' || fail "app since"
 
 step "5 locally built image"
-wait_for 60 "local error" is 1 container_image_info 'container="local"' 'mode="error"'
-has image_check_error "reference=\"$REG/local:1\"" 'reason="not_found"' ||
-  has image_check_error "reference=\"$REG/local:1\"" 'reason="denied"' || fail "local reason"
+wait_for 60 "local" is 1 container_image_info 'container="local"' 'mode="local"' "reference=\"$REG/local:1\""
+is 0 container_image_update_pulled 'container="local"' || fail "local pulled"
+! has image_check_success "reference=\"$REG/local:1\"" || fail "local checked"
 
 step "6 pinned and local"
 is 1 container_image_info 'container="pinned"' 'mode="pinned"' || fail "pinned"

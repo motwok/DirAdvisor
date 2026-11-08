@@ -300,3 +300,47 @@ func TestIsNotFound(t *testing.T) {
 		t.Fatal("IsNotFound")
 	}
 }
+
+func TestOrigin(t *testing.T) {
+	ctx := context.Background()
+	if o, err := fake("1.47").Origin(ctx); err != nil || o != OriginRepoDigests {
+		t.Fatalf("classic: %v %v", o, err)
+	}
+	var paths []string
+	store := func(api, min string) *Client {
+		return NewWithHTTP(rt{http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			paths = append(paths, r.URL.Path)
+			switch {
+			case r.URL.Path == "/version":
+				io.WriteString(w, `{"ApiVersion":"`+api+`","MinAPIVersion":"`+min+`"}`)
+			case strings.HasSuffix(r.URL.Path, "/info"):
+				io.WriteString(w, `{"DriverStatus":[["Backing Filesystem","extfs"],["x"],["driver-type","io.containerd.snapshotter.v1"]]}`)
+			default:
+				io.WriteString(w, `{"Id":"sha256:1","Identity":{"Pull":[{"Repository":"docker.io/library/nginx"}]}}`)
+			}
+		})})
+	}
+	c := store("1.53", "1.44")
+	c.CheckVersion(ctx)
+	if o, err := c.Origin(ctx); err != nil || o != OriginIdentity {
+		t.Fatalf("containerd: %v %v", o, err)
+	}
+	if im, err := c.ImageIdentity(ctx, "sha256:1"); err != nil || im.Identity.Pull[0].Repository != "docker.io/library/nginx" {
+		t.Fatalf("identity: %+v %v", im, err)
+	}
+	old := store("1.52", "1.44")
+	old.CheckVersion(ctx)
+	if o, err := old.Origin(ctx); err != nil || o != OriginNone {
+		t.Fatalf("containerd below 1.53: %v %v", o, err)
+	}
+	high := store("1.60", "1.55")
+	high.CheckVersion(ctx)
+	high.ImageIdentity(ctx, "sha256:1")
+	want := "/version /v1.44/info /v1.53/images/sha256:1/json /version /v1.44/info /version /v1.55/images/sha256:1/json"
+	if got := strings.Join(paths, " "); got != want {
+		t.Fatalf("paths %q", got)
+	}
+	if _, err := NewWithHTTP(errRT{}).Origin(ctx); err == nil {
+		t.Fatal("origin: dial")
+	}
+}

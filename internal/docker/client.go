@@ -22,6 +22,9 @@ import (
 // MinAPIVersion is the oldest supported Docker API version.
 const MinAPIVersion = "1.41"
 
+// IdentityAPIVersion is the first API version with Identity in the image inspect.
+const IdentityAPIVersion = "1.53"
+
 type Info struct {
 	DockerRootDir   string `json:"DockerRootDir"`
 	OperatingSystem string `json:"OperatingSystem"`
@@ -133,7 +136,29 @@ type NetStats struct {
 type Image struct {
 	ID          string   `json:"Id"`
 	RepoDigests []string `json:"RepoDigests"`
+	// Only from ImageIdentity on the containerd store.
+	Identity *Identity `json:"Identity"`
 }
+
+type Identity struct {
+	Pull []PullIdentity `json:"Pull"`
+}
+
+type PullIdentity struct {
+	Repository string `json:"Repository"`
+}
+
+// Origin is how a pulled image is told from a locally built one.
+type Origin int
+
+const (
+	// OriginNone: containerd store below API 1.53, not decidable.
+	OriginNone Origin = iota
+	// OriginRepoDigests: classic store, a pulled image keeps its RepoDigests.
+	OriginRepoDigests
+	// OriginIdentity: containerd store, a pulled or pushed image has Identity.Pull.
+	OriginIdentity
+)
 
 type Event struct {
 	Type   string `json:"Type"`
@@ -170,6 +195,8 @@ type Client struct {
 	// version is the API version in the request path: MinAPIVersion, or the
 	// daemon's minimum if that is higher (CheckVersion).
 	version string
+	// max is the daemon's API version (CheckVersion).
+	max string
 }
 
 func (c *Client) apiVersion() string {
@@ -213,7 +240,11 @@ type APIError struct {
 func (e *APIError) Error() string { return fmt.Sprintf("docker API %d: %s", e.Status, e.Message) }
 
 func (c *Client) do(ctx context.Context, p string, header http.Header, out any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://docker/v"+c.apiVersion()+p, nil)
+	return c.doVersion(ctx, c.apiVersion(), p, header, out)
+}
+
+func (c *Client) doVersion(ctx context.Context, version, p string, header http.Header, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://docker/v"+version+p, nil)
 	if err != nil {
 		return err
 	}
@@ -276,11 +307,12 @@ func (c *Client) CheckVersion(ctx context.Context) (version string, reached bool
 	if CompareVersion(v.APIVersion, MinAPIVersion) < 0 {
 		return v.APIVersion, true, fmt.Errorf("Docker API %s is older than the required %s", v.APIVersion, MinAPIVersion)
 	}
+	c.mu.Lock()
+	c.max = v.APIVersion
 	if CompareVersion(v.MinAPIVersion, MinAPIVersion) > 0 {
-		c.mu.Lock()
 		c.version = v.MinAPIVersion
-		c.mu.Unlock()
 	}
+	c.mu.Unlock()
 	return v.APIVersion, true, nil
 }
 
@@ -356,6 +388,39 @@ func (c *Client) Image(ctx context.Context, idOrRef string) (Image, error) {
 	var r Image
 	err := c.do(ctx, "/images/"+idOrRef+"/json", nil, &r)
 	return r, err
+}
+
+// ImageIdentity inspects an image with at least IdentityAPIVersion.
+func (c *Client) ImageIdentity(ctx context.Context, id string) (Image, error) {
+	v := c.apiVersion()
+	if CompareVersion(v, IdentityAPIVersion) < 0 {
+		v = IdentityAPIVersion
+	}
+	var r Image
+	err := c.doVersion(ctx, v, "/images/"+id+"/json", nil, &r)
+	return r, err
+}
+
+// Origin reads the image store from /info; it needs CheckVersion first.
+func (c *Client) Origin(ctx context.Context) (Origin, error) {
+	var i struct {
+		DriverStatus [][]string `json:"DriverStatus"`
+	}
+	if err := c.do(ctx, "/info", nil, &i); err != nil {
+		return OriginNone, err
+	}
+	for _, kv := range i.DriverStatus {
+		if len(kv) == 2 && kv[0] == "driver-type" && kv[1] == "io.containerd.snapshotter.v1" {
+			c.mu.Lock()
+			api := c.max
+			c.mu.Unlock()
+			if CompareVersion(api, IdentityAPIVersion) >= 0 {
+				return OriginIdentity, nil
+			}
+			return OriginNone, nil
+		}
+	}
+	return OriginRepoDigests, nil
 }
 
 // Distribution asks the daemon for the registry digest of an image reference.

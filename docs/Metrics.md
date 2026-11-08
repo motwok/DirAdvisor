@@ -78,7 +78,7 @@ All metrics have the prefix `hatchlens_`; all are gauges except the `_total` cou
 - `image`: the reference as written when the container was created (`nginx:1.27`). For Swarm tasks
   without the digest Swarm adds (`name:tag@sha256:...` shows as `name:tag`).
 - `reference`: the normalized reference (`docker.io/library/nginx:1.27`); it joins `container_image_info`
-  with the per-reference series below. No label for `mode="local"`.
+  with the per-reference series below. No label for a container created from an image ID.
 - `stack`: the Compose project, for Swarm tasks the stack; no label without one.
 - `state`: `running` (also paused and restarting) or `stopped` (created, exited, dead).
 - Additional labels: see [Configuration.md](Configuration.md#additional-labels-on-the-image-metrics).
@@ -91,7 +91,11 @@ All metrics have the prefix `hatchlens_`; all are gauges except the `_total` cou
 | `pending` | not checked yet |
 | `error` | the check failed and no registry digest is known; see `image_check_error` |
 | `pinned` | the reference has a digest (`image@sha256:...`); nothing to check |
-| `local` | the container was created from an image ID; nothing to check |
+| `local` | the container was created from an image ID, or its image was built locally; nothing to check |
+
+A locally built image is one that came from no registry: on the classic image store it has no
+`RepoDigests`; on the containerd image store (Docker 29.2 or newer) the daemon knows no pull or push
+for it. On the containerd store of older Docker versions it cannot be told apart and is checked.
 
 A failed check does not drop a known registry digest: the container stays `checked` and
 `image_check_error` shows the failure.
@@ -108,7 +112,7 @@ A failed check does not drop a known registry digest: the container stays `check
 
 | `reason` | Registry answer | Usual cause |
 |---|---|---|
-| `not_found` | 404 | locally built image, tag deleted |
+| `not_found` | 404 | tag deleted, locally built image on an older containerd store |
 | `denied` | 401, 403 | private image without credentials; Docker Hub also answers 403 for a repository that does not exist |
 | `rate_limited` | 429 | pull limit reached |
 | `unreachable` | anything else, no answer within 30 seconds | network, registry down |
@@ -208,7 +212,7 @@ groups:
         expr: hatchlens_container_image_update_pulled == 1
         for: 1h
       - alert: ImageCheckFailing
-        # not_found and denied are mostly local images or missing credentials: exclude or configure them.
+        # not_found and denied are mostly missing credentials or deleted tags: configure or exclude them.
         expr: hatchlens_image_check_error{reason=~"rate_limited|unreachable"} == 1
         for: 1d
       - alert: ImageCheckStale
