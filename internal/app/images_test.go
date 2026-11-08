@@ -23,6 +23,9 @@ func fakeEngine(api string) *docker.Client {
 	mux.HandleFunc("/version", func(w http.ResponseWriter, _ *http.Request) {
 		io.WriteString(w, `{"ApiVersion":"`+api+`"}`)
 	})
+	mux.HandleFunc("/v1.41/info", func(w http.ResponseWriter, _ *http.Request) {
+		io.WriteString(w, `{}`)
+	})
 	mux.HandleFunc("/v1.41/containers/json", func(w http.ResponseWriter, _ *http.Request) {
 		io.WriteString(w, `[{"Id":"c1","Names":["/web"],"ImageID":"sha256:1","State":"running"}]`)
 	})
