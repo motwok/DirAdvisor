@@ -731,7 +731,7 @@ func TestLocalBuilds(t *testing.T) {
 	// No decision possible: everything named is checked.
 	r.f.origin = docker.OriginNone
 	r.reconcile()
-	r.has(`hatchlens_container_image_info{container="built",mode="pending",reference="`+own+`",state="running"} 1`)
+	r.has(`hatchlens_container_image_info{container="built",mode="pending",reference="` + own + `",state="running"} 1`)
 
 	r.f.originErr = errBoom
 	r.reconcile()
