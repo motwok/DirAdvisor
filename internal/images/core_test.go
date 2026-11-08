@@ -360,8 +360,8 @@ func TestForget(t *testing.T) {
 	r.reconcile()
 	r.clk.add(2 * time.Hour)
 	r.reconcile()
-	if len(r.c.st.Refs) != 0 || len(r.c.st.Since) != 0 {
-		t.Fatalf("not forgotten: %v %v", r.c.st.Refs, r.c.st.Since)
+	if len(r.c.st.Refs) != 0 || len(r.c.st.Since) != 0 || len(r.c.st.Running) != 0 {
+		t.Fatalf("not forgotten: %v %v %v", r.c.st.Refs, r.c.st.Since, r.c.st.Running)
 	}
 }
 
@@ -598,6 +598,9 @@ func TestRecheckAfterImageSwap(t *testing.T) {
 	r.checkAll()
 	r.reconcile()
 	r.has(`hatchlens_container_image_update_available{container="web",image="nginx:1.29"} 1`)
+	if rs := r.c.st.Refs[nginx]; rs.Due == r.clk.now().Unix() {
+		t.Fatal("a new reference is checked twice")
+	}
 
 	// The registry moved on to idx2 unseen; the container is recreated on it.
 	r.f.dist[nginx] = "sha256:idx2"
@@ -617,8 +620,23 @@ func TestRecheckAfterImageSwap(t *testing.T) {
 	r.has(`hatchlens_container_image_update_available{container="web",image="nginx:1.29"} 0`)
 	r.hasNot("since_timestamp_seconds{")
 
-	// Unchanged running digests and a failing reference keep their due time.
+	// Recreated while HatchLens was down, e.g. HatchLens itself.
 	r.f.dist[nginx] = "sha256:idx3"
+	r.c.Save()
+	r.f.containers[0].ImageID = "sha256:img3"
+	r.f.images["sha256:img3"] = docker.Image{ID: "sha256:img3", RepoDigests: []string{"nginx@sha256:idx3"}}
+	r.clk.add(time.Minute)
+	r.start()
+	r.reconcile()
+	if rs := r.c.st.Refs[nginx]; rs.Due != r.clk.now().Unix() {
+		t.Fatalf("not due after a swap across a restart: %d", rs.Due)
+	}
+	r.checkAll()
+	r.reconcile()
+	r.has(`hatchlens_container_image_update_available{container="web",image="nginx:1.29"} 0`)
+
+	// Unchanged running digests and a failing reference keep their due time.
+	r.f.dist[nginx] = "sha256:idx4"
 	r.clk.add(25 * time.Hour)
 	r.checkAll()
 	r.reconcile()
@@ -636,5 +654,33 @@ func TestRecheckAfterImageSwap(t *testing.T) {
 	r.reconcile()
 	if r.c.st.Refs[nginx].Due != due {
 		t.Fatal("backoff skipped")
+	}
+}
+
+func TestRecheckSwarmOverlap(t *testing.T) {
+	r := newRig(t, "images: { check_interval: 24h }")
+	task := func(id string) map[string]string {
+		return map[string]string{swarmTask: id, "com.docker.swarm.service.name": "s_web",
+			"com.docker.swarm.task.name": "s_web.1." + id}
+	}
+	r.f.add("s_web.1.a", "nginx:1.29", "sha256:old", "running", task("a"), "nginx@sha256:idx0")
+	r.f.dist[nginx] = "sha256:idx1"
+	r.reconcile()
+	r.checkAll()
+	r.reconcile()
+
+	// start-first: the new task runs next to the old one; one recheck, not one per reconcile.
+	r.f.add("s_web.1.b", "nginx:1.29", "sha256:new", "running", task("b"), "nginx@sha256:idx2")
+	r.clk.add(time.Minute)
+	r.reconcile()
+	if rs := r.c.st.Refs[nginx]; rs.Due != r.clk.now().Unix() {
+		t.Fatalf("not due: %d", rs.Due)
+	}
+	r.checkAll()
+	due := r.c.st.Refs[nginx].Due
+	r.clk.add(time.Minute)
+	r.reconcile()
+	if r.c.st.Refs[nginx].Due != due {
+		t.Fatal("rechecked again during the overlap")
 	}
 }
