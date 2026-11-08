@@ -36,6 +36,12 @@ type Since struct {
 	Unused int64 `json:"unused,omitempty"`
 }
 
+// Running are the running digests of one key and reference at the last reconcile.
+type Running struct {
+	Digests []string `json:"digests"`
+	Unused  int64    `json:"unused,omitempty"`
+}
+
 // Registry is the rate limit backoff of one registry.
 type Registry struct {
 	Until int64 `json:"until"`
@@ -46,6 +52,7 @@ type State struct {
 	SchemaVersion int                  `json:"schema_version"`
 	Refs          map[string]*Ref      `json:"refs"`
 	Since         map[string]*Since    `json:"since"`
+	Running       map[string]*Running  `json:"running"`
 	Registries    map[string]*Registry `json:"registries"`
 }
 
@@ -98,6 +105,9 @@ func migrate(s *State) {
 	if s.Registries == nil {
 		s.Registries = map[string]*Registry{}
 	}
+	if s.Running == nil {
+		s.Running = map[string]*Running{}
+	}
 	// A null entry (hand edit) would panic on first use.
 	for k, v := range s.Refs {
 		if v == nil {
@@ -112,6 +122,11 @@ func migrate(s *State) {
 	for k, v := range s.Registries {
 		if v == nil {
 			delete(s.Registries, k)
+		}
+	}
+	for k, v := range s.Running {
+		if v == nil {
+			delete(s.Running, k)
 		}
 	}
 	s.SchemaVersion = SchemaVersion

@@ -219,6 +219,8 @@ func (c *Core) apply(cfg *config.Config, obs []observed) {
 	usedSince := map[string]bool{}
 	// since keys reported with update_available 1 and 0 in this reconcile.
 	up, down := map[string]bool{}, map[string]bool{}
+	// Running digests per key, and the reference of a key that reports 1.
+	cur, upRef := map[string][]string{}, map[string]*state.Ref{}
 	prev := c.prev
 	c.prev = map[string]entry{}
 	var view []entry
@@ -245,17 +247,14 @@ func (c *Core) apply(cfg *config.Config, obs []observed) {
 			rs.Unused = 0
 			sk := state.SinceKey(sinceKey(ct), e.Ref)
 			usedSince[sk] = true
+			cur[sk] = append(cur[sk], o.running...)
 			switch {
 			case rs.Digest != "":
 				e.Mode = "checked"
 				c.compare(&e, rs, sk, now)
 				if e.Available == 1 {
 					up[sk] = true
-					// The known registry digest may be older than the new running image (REG-10).
-					if p, ok := prev[e.Container]; ok && p.Ref == e.Ref && !slices.Equal(p.running, e.running) &&
-						rs.Reason == "" && rs.Due > now {
-						rs.Due = now
-					}
+					upRef[sk] = rs
 				} else {
 					down[sk] = true
 				}
@@ -274,6 +273,24 @@ func (c *Core) apply(cfg *config.Config, obs []observed) {
 			delete(c.st.Since, sk)
 		}
 	}
+	// The known registry digest may be older than a new running image (REG-10).
+	for sk, d := range cur {
+		slices.Sort(d)
+		d = slices.Compact(d)
+		seen := c.st.Running[sk]
+		if seen == nil {
+			seen = &state.Running{}
+			c.st.Running[sk] = seen
+		}
+		seen.Unused = 0
+		if slices.Equal(seen.Digests, d) {
+			continue
+		}
+		seen.Digests = d
+		if rs := upRef[sk]; rs != nil && rs.Reason == "" && rs.Due > now {
+			rs.Due = now
+		}
+	}
 	forget := int64(cfg.Images.ForgetAfter.D().Seconds())
 	for k, rs := range c.st.Refs {
 		if !usedRefs[k] {
@@ -290,6 +307,15 @@ func (c *Core) apply(cfg *config.Config, obs []observed) {
 				s.Unused = now
 			} else if now-s.Unused >= forget {
 				delete(c.st.Since, k)
+			}
+		}
+	}
+	for k, s := range c.st.Running {
+		if !usedSince[k] {
+			if s.Unused == 0 {
+				s.Unused = now
+			} else if now-s.Unused >= forget {
+				delete(c.st.Running, k)
 			}
 		}
 	}

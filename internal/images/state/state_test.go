@@ -65,12 +65,12 @@ func TestCorruptAndNewer(t *testing.T) {
 func TestNullEntries(t *testing.T) {
 	dir := t.TempDir()
 	data := `{"schema_version": 1, "refs": {"a": null, "b": {"due": 1}}, "since": {"x": null},
-		"registries": {"r": null}}`
+		"registries": {"r": null}, "running": {"y": null}}`
 	if err := os.WriteFile(filepath.Join(dir, FileName), []byte(data), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	s, err := Load(dir)
-	if err != nil || len(s.Refs) != 1 || len(s.Since) != 0 || len(s.Registries) != 0 {
+	if err != nil || len(s.Refs) != 1 || len(s.Since) != 0 || len(s.Registries) != 0 || len(s.Running) != 0 {
 		t.Fatalf("null entries: %+v %v", s, err)
 	}
 }
