@@ -23,6 +23,8 @@ type Docker interface {
 	Containers(ctx context.Context) ([]docker.Container, error)
 	Container(ctx context.Context, id string) (docker.ContainerJSON, error)
 	Image(ctx context.Context, idOrRef string) (docker.Image, error)
+	ImageIdentity(ctx context.Context, id string) (docker.Image, error)
+	Origin(ctx context.Context) (docker.Origin, error)
 	Distribution(ctx context.Context, ref, auth string) (string, error)
 }
 

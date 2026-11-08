@@ -35,6 +35,9 @@ type fakeDocker struct {
 	auths      []string
 	distRefs   []string
 	onDist     func()
+	origin     docker.Origin
+	originErr  error
+	identities int
 }
 
 func newFake() *fakeDocker {
@@ -77,6 +80,19 @@ func (f *fakeDocker) Image(_ context.Context, s string) (docker.Image, error) {
 		return docker.Image{}, &docker.APIError{Status: 404, Message: "no such image"}
 	}
 	return im, nil
+}
+
+func (f *fakeDocker) ImageIdentity(ctx context.Context, id string) (docker.Image, error) {
+	f.mu.Lock()
+	f.identities++
+	f.mu.Unlock()
+	return f.Image(ctx, id)
+}
+
+func (f *fakeDocker) Origin(context.Context) (docker.Origin, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.origin, f.originErr
 }
 
 func (f *fakeDocker) Distribution(_ context.Context, r, auth string) (string, error) {

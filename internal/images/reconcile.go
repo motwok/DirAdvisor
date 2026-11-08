@@ -26,6 +26,8 @@ type observed struct {
 	c       docker.Container
 	written string
 	local   bool
+	// built: a named, locally built image (REF-7).
+	built   bool
 	swarm   bool
 	r       ref.Ref
 	running []string
@@ -80,11 +82,20 @@ func (c *Core) observe(ctx context.Context, cfg *config.Config) ([]observed, err
 		c.versionOK = true
 		c.mu.Unlock()
 	}
+	origin, err := c.dk.Origin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	inspect := c.dk.Image
+	if origin == docker.OriginIdentity {
+		inspect = c.dk.ImageIdentity
+	}
 	cs, err := c.dk.Containers(ctx)
 	if err != nil {
 		return nil, err
 	}
 	images := map[string]docker.Image{}
+	gone := map[string]bool{}
 	refImages := map[string]string{}
 	seen := map[string]bool{}
 	var out []observed
@@ -114,15 +125,17 @@ func (c *Core) observe(ctx context.Context, cfg *config.Config) ([]observed, err
 			}
 			im, ok := images[ct.ImageID]
 			if !ok {
-				if im, err = c.dk.Image(ctx, ct.ImageID); docker.IsNotFound(err) {
+				if im, err = inspect(ctx, ct.ImageID); docker.IsNotFound(err) {
 					// Removed with "docker rmi -f": the ID is the only running digest.
 					im = docker.Image{ID: ct.ImageID}
+					gone[ct.ImageID] = true
 				} else if err != nil {
 					return nil, err
 				}
 				images[ct.ImageID] = im
 			}
 			o.running = runningDigests(im, ct.ImageID, o.r.Repository())
+			o.built = !gone[ct.ImageID] && built(origin, im)
 			if !swarm {
 				id, ok := refImages[o.r.String()]
 				if !ok {
@@ -182,6 +195,17 @@ func excluded(cfg *config.Config, ct docker.Container, images ...string) bool {
 	return cfg.ExcludedContainer(ct.Name(), ct.Labels, images...)
 }
 
+// built reports an image that came from no registry (REF-7).
+func built(o docker.Origin, im docker.Image) bool {
+	switch o {
+	case docker.OriginRepoDigests:
+		return len(im.RepoDigests) == 0
+	case docker.OriginIdentity:
+		return im.Identity == nil || len(im.Identity.Pull) == 0
+	}
+	return false
+}
+
 // runningDigests are the RepoDigests of the repository plus the image ID (REF-5).
 func runningDigests(im docker.Image, imageID, repo string) []string {
 	var out []string
@@ -236,6 +260,8 @@ func (c *Core) apply(cfg *config.Config, obs []observed) {
 			e.Mode = "local"
 		case o.r.Digest != "":
 			e.Ref, e.Mode = o.r.String(), "pinned"
+		case o.built:
+			e.Ref, e.Mode = o.r.String(), "local"
 		default:
 			e.Ref = o.r.String()
 			usedRefs[e.Ref] = true

@@ -52,9 +52,10 @@ are not reported. With `image` in `disable` there are no image metrics at all.
 - `pending`: not checked yet. Checks go out one at a time, at least 10 seconds apart per registry, and a
   registry that answered 429 is paused, so after a start with many images this takes a while.
 - `error` with `hatchlens_image_check_error`:
-  - `not_found`: the image is not in the registry, usually a locally built image. Exclude it.
+  - `not_found`: the image is not in the registry, for example a deleted tag. A locally built image
+    shows as `local` instead, except on the containerd store of Docker before 29.2; exclude it there.
   - `denied`: a private image without credentials (add them under `images.registries`), or a Docker Hub
-    repository that does not exist (also a locally built image).
+    repository that does not exist.
   - `rate_limited`: the registry's pull limit; see
     [Configuration.md](Configuration.md#docker-hub-pull-limit).
   - `unreachable`: the daemon could not reach the registry.
